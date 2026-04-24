@@ -73,8 +73,8 @@ importers:
         specifier: 1.4.7
         version: 1.4.7
       copy-to-clipboard:
-        specifier: 3.3.3
-        version: 3.3.3
+        specifier: 4.0.1
+        version: 4.0.1
       country-flag-icons:
         specifier: 1.6.16
         version: 1.6.16
@@ -3978,6 +3978,9 @@ packages:
 
   copy-to-clipboard@3.3.3:
     resolution: {integrity: sha512-2KV8NhB5JqC3ky0r9PMCAZKbUHSwtEo4CwCs0KXgruG43gX5PMqDEBbVU4OUzw2MuAWUfsuFmWvEKG5QRfSnJA==}
+
+  copy-to-clipboard@4.0.1:
+    resolution: {integrity: sha512-IWQEaRPr+UQz10nBKILdqlVJLuk+qglcryQKLU41f6ZU7AKpRxSmp0kJjx5RMtqVhL6+ScDfqu5W7NeJdXIWww==}
 
   copyfiles@2.4.1:
     resolution: {integrity: sha512-fereAvAvxDrQDOXybk3Qu3dPbOoKoysFMWtkY3mv5BsL8//OSZVL5DCLYqgRfY5cWirgRzlC+WSrxp6Bo3eNZg==}
@@ -12602,6 +12605,8 @@ snapshots:
   copy-to-clipboard@3.3.3:
     dependencies:
       toggle-selection: 1.0.6
+
+  copy-to-clipboard@4.0.1: {}
 
   copyfiles@2.4.1:
     dependencies:
