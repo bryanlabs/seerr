@@ -1003,6 +1003,19 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         if (event.entity.media.mediaType === MediaType.TV) {
           await this.notifyAvailableSeries(event.entity as MediaRequest, event);
         }
+        if (
+          event.entity.media.mediaType === MediaType.AUDIOBOOK ||
+          event.entity.media.mediaType === MediaType.EBOOK
+        ) {
+          // Books don't have TMDB metadata; reuse the generic MediaRequest
+          // notification path (which the bryanlabs fork extended to handle
+          // AUDIOBOOK/EBOOK with a minimal Hardcover-id subject line).
+          await MediaRequest.sendNotification(
+            event.entity as MediaRequest,
+            event.entity.media,
+            Notification.MEDIA_AVAILABLE
+          );
+        }
       }
     } catch (e) {
       logger.error(
