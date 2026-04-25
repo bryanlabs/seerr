@@ -103,6 +103,18 @@ export interface SonarrSettings extends DVRSettings {
   monitorNewItems: 'all' | 'none';
 }
 
+/**
+ * Bookshelf is a Readarr fork. One Seerr instance fronts two Bookshelf
+ * instances: one for audiobooks (mediaType 'audiobook') and one for ebooks
+ * (mediaType 'ebook'). Each stores its own metadata profile in addition to
+ * quality profile since Readarr splits those concerns.
+ */
+export interface BookshelfSettings extends DVRSettings {
+  mediaType: 'audiobook' | 'ebook';
+  activeMetadataProfileId: number;
+  activeMetadataProfileName: string;
+}
+
 interface Quota {
   quotaLimit?: number;
   quotaDays?: number;
@@ -378,6 +390,7 @@ export interface AllSettings {
   tautulli: TautulliSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
+  bookshelf: BookshelfSettings[];
   public: PublicSettings;
   notifications: NotificationSettings;
   jobs: Record<JobId, JobSettings>;
@@ -454,6 +467,7 @@ class Settings {
       },
       radarr: [],
       sonarr: [],
+      bookshelf: [],
       public: {
         initialized: false,
       },
@@ -689,6 +703,14 @@ class Settings {
 
   set sonarr(data: SonarrSettings[]) {
     this.data.sonarr = data;
+  }
+
+  get bookshelf(): BookshelfSettings[] {
+    return this.data.bookshelf;
+  }
+
+  set bookshelf(data: BookshelfSettings[]) {
+    this.data.bookshelf = data;
   }
 
   get public(): PublicSettings {

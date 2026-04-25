@@ -167,7 +167,7 @@ const RequestCardError = ({ requestData }: RequestCardErrorProps) => {
                         ).length > 0
                       }
                       is4k={requestData.is4k}
-                      mediaType={requestData.type}
+                      mediaType={requestData.type as 'movie' | 'tv' | undefined}
                       plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
                       serviceUrl={
                         requestData.is4k
@@ -332,7 +332,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
       <RequestModal
         show={showEditModal}
         tmdbId={request.media.tmdbId}
-        type={request.type}
+        type={request.type as 'movie' | 'tv' | 'collection'}
         is4k={request.is4k}
         editRequest={request}
         onCancel={() => setShowEditModal(false)}
@@ -472,7 +472,7 @@ const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
                 }
                 is4k={requestData.is4k}
                 tmdbId={requestData.media.tmdbId}
-                mediaType={requestData.type}
+                mediaType={requestData.type as 'movie' | 'tv' | undefined}
                 plexUrl={requestData.is4k ? plexUrl4k : plexUrl}
                 serviceUrl={
                   requestData.is4k
