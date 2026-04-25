@@ -4,6 +4,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tag from '@app/components/Common/Tag';
+import IssueModal from '@app/components/IssueModal';
 import StatusBadge from '@app/components/StatusBadge';
 import { Permission, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
@@ -13,15 +14,26 @@ import {
   CheckIcon,
   CloudIcon,
   CogIcon,
+  ExclamationTriangleIcon,
   StarIcon,
 } from '@heroicons/react/24/outline';
 import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
 import type { BookDetails as BookDetailsType } from '@server/models/Book';
 import axios from 'axios';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
+
+interface BookshelfRecommendationItem {
+  title: string;
+  foreignBookId: string;
+  releaseDate?: string;
+  remoteCover?: string;
+  images?: { coverType: string; url: string; remoteUrl?: string }[];
+  authorTitle?: string;
+}
 
 interface BookDetailsProps {
   mediaType: 'audiobook' | 'ebook';
@@ -44,7 +56,12 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
     id ? `${apiBase}/${id}` : null
   );
 
+  const { data: recs } = useSWR<{ results: BookshelfRecommendationItem[] }>(
+    id ? `${apiBase}/${id}/recommendations` : null
+  );
+
   const [requesting, setRequesting] = useState(false);
+  const [showIssueModal, setShowIssueModal] = useState(false);
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -223,13 +240,24 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
               </Button>
             </a>
           )}
+          {data.mediaInfo &&
+            hasPermission(
+              [Permission.CREATE_ISSUES, Permission.MANAGE_ISSUES],
+              { type: 'or' }
+            ) && (
+              <Button
+                buttonType="default"
+                onClick={() => setShowIssueModal(true)}
+              >
+                <ExclamationTriangleIcon className="mr-2 h-5 w-5" />
+                Report Issue
+              </Button>
+            )}
         </div>
       </div>
       <div className="media-overview">
         <div className="media-overview-left">
-          <div className="text-2xl font-bold text-white">
-            {intl('Overview')}
-          </div>
+          <div className="text-2xl font-bold text-white">Overview</div>
           <p className="pt-2 text-lg text-gray-300">
             {data.overview ?? 'No overview available.'}
           </p>
@@ -328,12 +356,65 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
           )}
         </div>
       </div>
+
+      {recs && recs.results.length > 0 && (
+        <div className="mt-10">
+          <div className="slider-header">
+            <div className="slider-title">
+              <span className="text-2xl font-bold text-white">
+                More by {data.authorName ?? 'this author'}
+              </span>
+            </div>
+          </div>
+          <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+            {recs.results.slice(0, 16).map((b) => {
+              const recCover =
+                b.remoteCover ??
+                b.images?.find((i) => i.coverType === 'cover')?.remoteUrl ??
+                b.images?.find((i) => i.coverType === 'cover')?.url;
+              const href = `/${mediaType === 'audiobook' ? 'audiobooks' : 'ebooks'}/${b.foreignBookId}`;
+              return (
+                <li key={b.foreignBookId}>
+                  <Link
+                    href={href}
+                    className="block transition hover:scale-105"
+                  >
+                    {recCover ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={recCover}
+                        alt={b.title}
+                        className="aspect-[2/3] w-full rounded-md object-cover shadow-md"
+                      />
+                    ) : (
+                      <div className="aspect-[2/3] w-full rounded-md bg-gray-700" />
+                    )}
+                    <div className="mt-1 truncate text-xs font-semibold text-white">
+                      {b.title}
+                    </div>
+                    {b.releaseDate?.slice(0, 4) && (
+                      <div className="text-xs text-gray-500">
+                        {b.releaseDate.slice(0, 4)}
+                      </div>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {showIssueModal && data.mediaInfo && (
+        <IssueModal
+          show={showIssueModal}
+          mediaType={mediaType === 'audiobook' ? 'movie' : 'movie'}
+          tmdbId={data.mediaInfo.tmdbId}
+          onCancel={() => setShowIssueModal(false)}
+        />
+      )}
     </div>
   );
 };
-
-// Tiny i18n helper to keep imports light. The user-facing strings are simple
-// for Phase 1+ and don't need extracted message catalogs.
-const intl = (s: string) => s;
 
 export default BookDetails;

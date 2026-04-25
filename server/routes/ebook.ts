@@ -273,6 +273,40 @@ ebookRoutes.get('/:foreignBookId', async (req, res, next) => {
   }
 });
 
+ebookRoutes.get('/:foreignBookId/recommendations', async (req, res, next) => {
+  const server = findEbookServer();
+  if (!server) {
+    return next({
+      status: 503,
+      message: 'No ebook Bookshelf server is configured',
+    });
+  }
+  try {
+    const client = getClient(server);
+    const baseLookup = await client.searchBook(
+      `work:${req.params.foreignBookId}`
+    );
+    const base = baseLookup[0];
+    if (!base) {
+      return res.status(200).json({ results: [] });
+    }
+    const authorName = guessAuthorName(base.authorTitle, base.title);
+    if (!authorName) {
+      return res.status(200).json({ results: [] });
+    }
+    const moreByAuthor = await client.searchBook(authorName).catch(() => []);
+    const filtered = moreByAuthor
+      .filter((b) => b.foreignBookId !== base.foreignBookId)
+      .slice(0, 20);
+    return res.status(200).json({ results: filtered });
+  } catch (e) {
+    return next({
+      status: 500,
+      message: `Ebook recommendations failed: ${e.message}`,
+    });
+  }
+});
+
 ebookRoutes.get('/queue', async (req, res, next) => {
   const server = findEbookServer();
   if (!server) {
