@@ -54,6 +54,166 @@ const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
   return (movie as MovieDetails).title !== undefined;
 };
 
+interface BookshelfBookSummary {
+  title: string;
+  authorTitle?: string;
+  releaseDate?: string;
+  remoteCover?: string;
+  images?: { coverType: string; url: string; remoteUrl?: string }[];
+}
+
+const titleCaseString = (s: string) =>
+  s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+const guessBookAuthor = (book: BookshelfBookSummary) => {
+  if (!book.authorTitle) return '';
+  let s = book.authorTitle.replace(book.title, '').trim();
+  if (s.endsWith(',')) s = s.slice(0, -1).trim();
+  return titleCaseString(
+    s.split(/[, ]+/).filter(Boolean).slice(0, 4).join(' ')
+  );
+};
+
+const bookCover = (book: BookshelfBookSummary) =>
+  book.remoteCover ??
+  book.images?.find((i) => i.coverType === 'cover')?.remoteUrl ??
+  book.images?.find((i) => i.coverType === 'cover')?.url;
+
+interface BookRequestItemProps {
+  request: RequestResultsResponse['results'][number];
+  revalidateList: () => void;
+}
+
+const BookRequestItem = ({ request, revalidateList }: BookRequestItemProps) => {
+  const { ref, inView } = useInView({ triggerOnce: true });
+  const intl = useIntl();
+  const { hasPermission } = useUser();
+  const { addToast } = useToasts();
+  const isAudio = request.type === 'audiobook';
+  const infoUrl = `/api/v1/${isAudio ? 'audiobook' : 'ebook'}/info/${request.media.tmdbId}`;
+  const { data: book } = useSWR<BookshelfBookSummary>(inView ? infoUrl : null);
+  const { data: requestData, mutate: revalidate } = useSWR<
+    NonFunctionProperties<MediaRequest>
+  >(`/api/v1/request/${request.id}`, { fallbackData: request });
+
+  const deleteRequest = async () => {
+    await axios.delete(`/api/v1/request/${request.id}`);
+    revalidateList();
+    mutate('/api/v1/request/count');
+  };
+
+  const retryRequest = async () => {
+    try {
+      await axios.post(`/api/v1/request/${request.id}/retry`);
+      revalidate();
+    } catch {
+      addToast(intl.formatMessage(messages.failedretry), {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    }
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="relative flex w-full flex-col justify-between overflow-hidden rounded-xl bg-gray-800 py-2 text-gray-400 shadow-md ring-1 ring-gray-700 xl:h-28 xl:flex-row"
+    >
+      <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
+        {book && bookCover(book) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={bookCover(book)}
+            alt=""
+            className="h-auto w-12 flex-shrink-0 rounded-md object-cover"
+          />
+        ) : (
+          <div className="h-16 w-12 flex-shrink-0 rounded-md bg-gray-700" />
+        )}
+        <div className="flex flex-col justify-center overflow-hidden pl-2 xl:pl-4">
+          <div className="pt-0.5 text-xs font-medium text-white sm:pt-1">
+            <Badge>{isAudio ? 'Audiobook' : 'Ebook'}</Badge>
+            {book?.releaseDate?.slice(0, 4) && (
+              <span className="ml-2">{book.releaseDate.slice(0, 4)}</span>
+            )}
+          </div>
+          <div className="mr-2 min-w-0 truncate text-lg font-bold text-white xl:text-xl">
+            {book?.title ?? `Book #${request.media.tmdbId}`}
+          </div>
+          {book && guessBookAuthor(book) && (
+            <div className="truncate text-sm text-gray-400">
+              {guessBookAuthor(book)}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="z-10 ml-4 mt-4 flex w-full flex-col justify-center gap-1 overflow-hidden pr-4 text-sm sm:ml-2 sm:mt-0 xl:flex-1 xl:pr-0">
+        <div className="card-field">
+          <span className="card-field-name">
+            {intl.formatMessage(globalMessages.status)}
+          </span>
+          {requestData?.status === MediaRequestStatus.DECLINED ? (
+            <Badge badgeType="danger">
+              {intl.formatMessage(globalMessages.declined)}
+            </Badge>
+          ) : requestData?.status === MediaRequestStatus.FAILED ? (
+            <Badge badgeType="danger">
+              {intl.formatMessage(globalMessages.failed)}
+            </Badge>
+          ) : requestData?.status === MediaRequestStatus.APPROVED ? (
+            <Badge badgeType="success">
+              {intl.formatMessage(globalMessages.approved)}
+            </Badge>
+          ) : (
+            <Badge>{intl.formatMessage(globalMessages.pending)}</Badge>
+          )}
+        </div>
+        <div className="card-field">
+          <span className="card-field-name">
+            {intl.formatMessage(messages.requested)}
+          </span>
+          <span className="flex truncate text-sm text-gray-300">
+            <FormattedRelativeTime
+              value={Math.floor(
+                (new Date(
+                  requestData?.createdAt ?? request.createdAt
+                ).getTime() -
+                  Date.now()) /
+                  1000
+              )}
+              updateIntervalInSeconds={1}
+              numeric="auto"
+            />
+          </span>
+        </div>
+      </div>
+      <div className="z-10 mt-4 flex w-full flex-col justify-center gap-2 pl-4 pr-4 xl:mt-0 xl:w-64 xl:items-end xl:pl-0">
+        {requestData?.status === MediaRequestStatus.FAILED &&
+          hasPermission(Permission.MANAGE_REQUESTS) && (
+            <Button
+              className="w-full"
+              buttonType="primary"
+              onClick={() => retryRequest()}
+            >
+              <ArrowPathIcon />
+              <span>{intl.formatMessage(globalMessages.retry)}</span>
+            </Button>
+          )}
+        {hasPermission(Permission.MANAGE_REQUESTS) && (
+          <ConfirmButton
+            onClick={() => deleteRequest()}
+            confirmText={intl.formatMessage(globalMessages.areyousure)}
+            className="w-full"
+          >
+            <TrashIcon />
+            <span>{intl.formatMessage(messages.deleterequest)}</span>
+          </ConfirmButton>
+        )}
+      </div>
+    </div>
+  );
+};
+
 interface RequestItemErrorProps {
   requestData?: NonFunctionProperties<MediaRequest>;
   revalidateList: () => void;
@@ -296,6 +456,21 @@ interface RequestItemProps {
 }
 
 const RequestItem = ({ request, revalidateList }: RequestItemProps) => {
+  if (request.type === 'audiobook' || request.type === 'ebook') {
+    return (
+      <BookRequestItem request={request} revalidateList={revalidateList} />
+    );
+  }
+
+  return (
+    <MovieOrTvRequestItem request={request} revalidateList={revalidateList} />
+  );
+};
+
+const MovieOrTvRequestItem = ({
+  request,
+  revalidateList,
+}: RequestItemProps) => {
   const { ref, inView } = useInView({
     triggerOnce: true,
   });
