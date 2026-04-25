@@ -229,6 +229,10 @@ app
       OpenApiValidator.middleware({
         apiSpec: API_SPEC_PATH,
         validateRequests: true,
+        // Bryanlabs fork: routes added by this fork (audiobook, ebook,
+        // settings/bookshelf) are not in seerr-api.yml. Skip strict validation
+        // for any undocumented path rather than 404'ing it.
+        ignoreUndocumented: true,
       })
     );
     /**
