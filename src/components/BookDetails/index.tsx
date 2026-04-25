@@ -107,6 +107,25 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
     }
   };
 
+  const forceSearchIndexers = async () => {
+    if (!id) return;
+    setManaging(true);
+    try {
+      await axios.post(`${apiBase}/${id}/search`);
+      addToast('Indexer search queued in Bookshelf', {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+    } catch (e) {
+      const message =
+        (e as { response?: { data?: { message?: string } } }).response?.data
+          ?.message ?? 'Failed to queue search';
+      addToast(message, { appearance: 'error', autoDismiss: true });
+    } finally {
+      setManaging(false);
+    }
+  };
+
   if (!data && !error) {
     return <LoadingSpinner />;
   }
@@ -334,6 +353,13 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
           >
             <TrashIcon className="mr-1 h-4 w-4" />
             Delete from Bookshelf
+          </Button>
+          <Button
+            buttonType="default"
+            onClick={forceSearchIndexers}
+            disabled={managing}
+          >
+            Search Indexers
           </Button>
           <Button
             buttonType="default"

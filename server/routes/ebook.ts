@@ -289,6 +289,39 @@ ebookRoutes.get('/:foreignBookId', async (req, res, next) => {
   }
 });
 
+ebookRoutes.post('/:foreignBookId/search', async (req, res, next) => {
+  const tmdbId = Number(req.params.foreignBookId);
+  if (!Number.isFinite(tmdbId)) {
+    return next({ status: 400, message: 'foreignBookId must be numeric' });
+  }
+  const media = await getRepository(Media).findOne({
+    where: { tmdbId, mediaType: MediaType.EBOOK },
+  });
+  if (!media || !media.serviceId || !media.externalServiceId) {
+    return next({
+      status: 404,
+      message: 'Book not yet added to Bookshelf',
+    });
+  }
+  const server = getSettings().bookshelf.find((b) => b.id === media.serviceId);
+  if (!server) {
+    return next({
+      status: 404,
+      message: 'Bookshelf instance not found',
+    });
+  }
+  try {
+    const client = getClient(server);
+    await client.searchBookCommand(media.externalServiceId);
+    return res.status(202).json({ message: 'BookSearch queued' });
+  } catch (e) {
+    return next({
+      status: 500,
+      message: `Force search failed: ${e.message}`,
+    });
+  }
+});
+
 ebookRoutes.get('/:foreignBookId/recommendations', async (req, res, next) => {
   const server = findEbookServer();
   if (!server) {
