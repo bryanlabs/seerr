@@ -194,6 +194,8 @@ const RequestList = () => {
               <option value="tv">
                 {intl.formatMessage(globalMessages.tvshows)}
               </option>
+              <option value="audiobook">Audiobooks</option>
+              <option value="ebook">Ebooks</option>
             </select>
           </div>
           <div className="mb-2 flex flex-grow sm:mb-0 sm:mr-2 lg:flex-grow-0">

@@ -174,6 +174,16 @@ requestRoutes.get<Record<string, unknown>, RequestResultsResponse>(
             type: MediaType.TV,
           });
           break;
+        case 'audiobook':
+          query = query.andWhere('request.type = :type', {
+            type: MediaType.AUDIOBOOK,
+          });
+          break;
+        case 'ebook':
+          query = query.andWhere('request.type = :type', {
+            type: MediaType.EBOOK,
+          });
+          break;
       }
 
       const [requests, requestCount] = await query

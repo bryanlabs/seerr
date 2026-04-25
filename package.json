@@ -1,6 +1,6 @@
 {
   "name": "seerr",
-  "version": "3.2.1-bryanlabs.14",
+  "version": "3.2.1-bryanlabs.15",
   "private": true,
   "packageManager": "pnpm@10.24.0",
   "scripts": {
