@@ -66,7 +66,13 @@ export interface BookshelfBook {
 
 export interface AddBookOptions {
   foreignBookId: string;
+  /**
+   * Either pass an explicit foreignAuthorId or an authorName for the route to
+   * resolve via /author/lookup. Bookshelf's /book/lookup response does not
+   * include the author's foreignAuthorId, and it is required when POST /book.
+   */
   foreignAuthorId?: string;
+  authorName?: string;
   profileId: number;
   metadataProfileId: number;
   rootFolderPath: string;
@@ -166,19 +172,38 @@ class BookshelfAPI extends ServarrBase<{
   public async addBook(options: AddBookOptions): Promise<BookshelfBook> {
     try {
       // Bookshelf (Readarr) requires the author to exist before a book can be
-      // added. The /book/lookup response includes the embedded author with
-      // foreignAuthorId (Hardcover author id via rreading-glasses proxy). The
-      // lookup endpoint resolves a specific work by foreignBookId via the
-      // `work:<id>` term prefix; passing the bare id returns no results.
-      const lookup = await this.searchBook(`work:${options.foreignBookId}`);
+      // added, but its /book/lookup response does not include the author's
+      // foreignAuthorId. So we resolve the author separately via
+      // /author/lookup and merge it into the POST /book payload. The book
+      // lookup uses the `work:<foreignBookId>` term prefix; the bare id
+      // returns no results.
+      const bookLookup = await this.searchBook(`work:${options.foreignBookId}`);
       const match =
-        lookup.find((b) => b.foreignBookId === options.foreignBookId) ??
-        lookup[0];
+        bookLookup.find((b) => b.foreignBookId === options.foreignBookId) ??
+        bookLookup[0];
 
       if (!match) {
         throw new Error(
-          `[Bookshelf] Lookup returned no match for ${options.foreignBookId}`
+          `[Bookshelf] Book lookup returned no match for ${options.foreignBookId}`
         );
+      }
+
+      let foreignAuthorId = options.foreignAuthorId;
+      let resolvedAuthor: BookshelfAuthor | undefined;
+      if (!foreignAuthorId) {
+        if (!options.authorName) {
+          throw new Error(
+            `[Bookshelf] addBook requires either foreignAuthorId or authorName`
+          );
+        }
+        const authorLookup = await this.searchAuthor(options.authorName);
+        resolvedAuthor = authorLookup[0];
+        if (!resolvedAuthor?.foreignAuthorId) {
+          throw new Error(
+            `[Bookshelf] Author lookup returned no match for "${options.authorName}"`
+          );
+        }
+        foreignAuthorId = resolvedAuthor.foreignAuthorId;
       }
 
       const payload: Partial<BookshelfBook> & Record<string, unknown> = {
@@ -188,11 +213,12 @@ class BookshelfAPI extends ServarrBase<{
         rootFolderPath: options.rootFolderPath,
         monitored: options.monitored ?? true,
         author: {
-          ...(match.author ?? {
-            authorName: '',
-            titleSlug: '',
-            foreignAuthorId: '',
+          ...(resolvedAuthor ?? {
+            authorName: options.authorName ?? '',
+            titleSlug: foreignAuthorId,
+            foreignAuthorId,
           }),
+          foreignAuthorId,
           qualityProfileId: options.profileId,
           metadataProfileId: options.metadataProfileId,
           rootFolderPath: options.rootFolderPath,

@@ -52,13 +52,22 @@ ebookRoutes.get('/search', async (req, res, next) => {
 });
 
 ebookRoutes.post('/request', async (req, res, next) => {
-  const { foreignBookId, searchNow } = req.body as {
-    foreignBookId?: string;
-    searchNow?: boolean;
-  };
+  const { foreignBookId, foreignAuthorId, authorName, searchNow } =
+    req.body as {
+      foreignBookId?: string;
+      foreignAuthorId?: string;
+      authorName?: string;
+      searchNow?: boolean;
+    };
 
   if (!foreignBookId) {
     return next({ status: 400, message: 'foreignBookId is required' });
+  }
+  if (!foreignAuthorId && !authorName) {
+    return next({
+      status: 400,
+      message: 'foreignAuthorId or authorName is required',
+    });
   }
 
   const server = findEbookServer();
@@ -73,6 +82,8 @@ ebookRoutes.post('/request', async (req, res, next) => {
     const client = getClient(server);
     const book = await client.addBook({
       foreignBookId,
+      foreignAuthorId,
+      authorName,
       profileId: server.activeProfileId,
       metadataProfileId: server.activeMetadataProfileId,
       rootFolderPath: server.activeDirectory,
