@@ -311,7 +311,7 @@ audiobookRoutes.post('/:foreignBookId/search', async (req, res, next) => {
   const media = await getRepository(Media).findOne({
     where: { tmdbId, mediaType: MediaType.AUDIOBOOK },
   });
-  if (!media || !media.serviceId || !media.externalServiceId) {
+  if (!media || media.serviceId == null || media.externalServiceId == null) {
     return next({
       status: 404,
       message: 'Book not yet added to Bookshelf',
