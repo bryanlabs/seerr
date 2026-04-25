@@ -251,19 +251,51 @@ class BookshelfAPI extends ServarrBase<{
         payload.tags = options.tags;
       }
 
-      const response = await this.axios.post<BookshelfBook>('/book', payload);
+      try {
+        const response = await this.axios.post<BookshelfBook>('/book', payload);
 
-      if (response.data.id) {
-        logger.info('Bookshelf accepted request', { label: 'Bookshelf' });
-      } else {
-        logger.error('Failed to add book to Bookshelf', {
+        if (response.data.id) {
+          logger.info('Bookshelf accepted request', { label: 'Bookshelf' });
+        } else {
+          logger.error('Failed to add book to Bookshelf', {
+            label: 'Bookshelf',
+            options,
+          });
+          throw new Error('Failed to add book to Bookshelf');
+        }
+
+        return response.data;
+      } catch (e) {
+        // Bookshelf returns 409 with a UNIQUE constraint failure when the
+        // book/edition is already present. Treat this as success: look up the
+        // existing book and trigger BookSearch so the user still gets a grab
+        // attempt for any new request.
+        const status = e?.response?.status;
+        const body = e?.response?.data;
+        const isDuplicate =
+          status === 409 ||
+          (typeof body?.message === 'string' &&
+            /UNIQUE constraint failed/i.test(body.message));
+        if (!isDuplicate) {
+          throw e;
+        }
+
+        const existing = await this.findExistingBook(match.foreignBookId);
+        if (!existing) {
+          throw e;
+        }
+
+        if (existing.id && (options.searchNow ?? true)) {
+          await this.searchBookCommand(existing.id).catch(() => undefined);
+        }
+
+        logger.info('Bookshelf book already present, treated as success', {
           label: 'Bookshelf',
-          options,
+          bookId: existing.id,
+          foreignBookId: existing.foreignBookId,
         });
-        throw new Error('Failed to add book to Bookshelf');
+        return existing;
       }
-
-      return response.data;
     } catch (e) {
       logger.error('Something went wrong while adding a book to Bookshelf.', {
         label: 'Bookshelf API',
@@ -272,6 +304,17 @@ class BookshelfAPI extends ServarrBase<{
         response: e?.response?.data,
       });
       throw new Error('Failed to add book', { cause: e });
+    }
+  }
+
+  private async findExistingBook(
+    foreignBookId: string
+  ): Promise<BookshelfBook | undefined> {
+    try {
+      const response = await this.axios.get<BookshelfBook[]>('/book');
+      return response.data.find((b) => b.foreignBookId === foreignBookId);
+    } catch {
+      return undefined;
     }
   }
 
