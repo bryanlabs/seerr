@@ -122,7 +122,10 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
   }
 
   public async beforeUpdate(event: UpdateEvent<Media>): Promise<void> {
-    if (!event.entity) {
+    if (!event.entity || !event.databaseEntity) {
+      // databaseEntity is null for partial updates (repository.update / QB
+      // .update). The season-status reload below requires it; nothing to do
+      // for partial updates.
       return;
     }
 
@@ -153,7 +156,7 @@ export class MediaSubscriber implements EntitySubscriberInterface<Media> {
   }
 
   public async afterUpdate(event: UpdateEvent<Media>): Promise<void> {
-    if (!event.entity) {
+    if (!event.entity || !event.databaseEntity) {
       return;
     }
 
