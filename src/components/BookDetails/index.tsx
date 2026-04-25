@@ -226,20 +226,20 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
             {year && <span className="media-year"> ({year})</span>}
           </h1>
           {data.authorName && (
-            <span className="media-attribute">
+            <span className="media-attributes">
               <span className="text-gray-400">by </span>
               {data.authorName}
             </span>
           )}
           {data.genres && data.genres.length > 0 && (
-            <span className="media-attribute mt-2 flex flex-wrap gap-1">
+            <span className="media-attributes mt-2 flex flex-wrap gap-1">
               {data.genres.slice(0, 6).map((g) => (
                 <Tag key={g}>{g}</Tag>
               ))}
             </span>
           )}
           {ratingValue !== undefined && ratingValue > 0 && (
-            <span className="media-attribute mt-2 inline-flex items-center gap-1">
+            <span className="media-attributes mt-2 inline-flex items-center gap-1">
               <StarIcon className="h-4 w-4 text-yellow-400" />
               <span className="text-white">{ratingValue.toFixed(2)}</span>
               {ratingVotes !== undefined && (
