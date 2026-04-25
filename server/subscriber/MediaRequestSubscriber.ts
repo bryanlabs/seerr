@@ -817,6 +817,124 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
+  /**
+   * When a book request transitions to APPROVED (either directly by an
+   * admin click or via the auto-approve path on initial create), this hook
+   * triggers BookshelfAPI.addBook so the book actually lands in the
+   * configured Bookshelf instance. Mirrors the sendToRadarr/sendToSonarr
+   * pattern, just simpler — no quality-profile resolution since the
+   * Bookshelf settings already encode the profile.
+   */
+  public async sendToBookshelf(entity: MediaRequest): Promise<void> {
+    if (
+      entity.status !== MediaRequestStatus.APPROVED ||
+      (entity.type !== MediaType.AUDIOBOOK && entity.type !== MediaType.EBOOK)
+    ) {
+      return;
+    }
+    try {
+      const mediaRepository = getRepository(Media);
+      const settings = getSettings();
+      const targetMediaType =
+        entity.type === MediaType.AUDIOBOOK ? 'audiobook' : 'ebook';
+      const server =
+        settings.bookshelf.find(
+          (b) => b.id === entity.serverId && b.mediaType === targetMediaType
+        ) ??
+        settings.bookshelf.find(
+          (b) => b.mediaType === targetMediaType && b.isDefault
+        );
+      if (!server) {
+        logger.warn(
+          'No Bookshelf instance configured for approved book request',
+          {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaType: entity.type,
+          }
+        );
+        return;
+      }
+
+      const media = await mediaRepository.findOne({
+        where: { id: entity.media.id },
+      });
+      if (!media) {
+        return;
+      }
+
+      // Already added to Bookshelf — skip duplicate addBook call.
+      if (media.externalServiceId != null) {
+        return;
+      }
+
+      // Pull the author name from the resolved metadata so addBook can do
+      // its /author/lookup. We don't have a stored author on Media; fetch
+      // by foreignBookId from Bookshelf.
+      const BookshelfAPI = (await import('@server/api/servarr/bookshelf'))
+        .default;
+      const { guessAuthorName } = await import('@server/models/Book');
+      const client = new BookshelfAPI({
+        apiKey: server.apiKey,
+        url: BookshelfAPI.buildUrl(server, '/api/v1'),
+      });
+      const lookup = await client.searchBook(`work:${media.tmdbId}`);
+      const match = lookup[0];
+      if (!match) {
+        logger.warn('Bookshelf lookup empty for approved book request', {
+          label: 'Media Request',
+          requestId: entity.id,
+          tmdbId: media.tmdbId,
+        });
+        return;
+      }
+      const authorName = guessAuthorName(match.authorTitle, match.title);
+
+      try {
+        const book = await client.addBook({
+          foreignBookId: String(media.tmdbId),
+          authorName,
+          profileId: server.activeProfileId,
+          metadataProfileId: server.activeMetadataProfileId,
+          rootFolderPath: server.activeDirectory,
+          monitored: true,
+          searchNow: true,
+        });
+
+        await mediaRepository.update(media.id, {
+          status: MediaStatus.PROCESSING,
+          serviceId: server.id,
+          externalServiceId: book.id ?? null,
+          externalServiceSlug: book.titleSlug ?? null,
+        });
+        logger.info('Bookshelf accepted approved book request', {
+          label: 'Media Request',
+          requestId: entity.id,
+          bookId: book.id,
+        });
+      } catch (e) {
+        logger.error(
+          'Failed to add approved book to Bookshelf, marking FAILED',
+          {
+            label: 'Media Request',
+            requestId: entity.id,
+            errorMessage: (e as Error).message,
+          }
+        );
+        const requestRepository = getRepository(MediaRequest);
+        entity.status = MediaRequestStatus.FAILED;
+        await requestRepository.save(entity);
+        MediaRequest.sendNotification(entity, media, Notification.MEDIA_FAILED);
+      }
+    } catch (e) {
+      logger.error('sendToBookshelf failed unexpectedly', {
+        label: 'Media Request',
+        requestId: entity.id,
+        errorMessage: (e as Error).message,
+      });
+    }
+  }
+
   public async updateParentStatus(entity: MediaRequest): Promise<void> {
     const mediaRepository = getRepository(Media);
     const media = await mediaRepository.findOne({
@@ -985,6 +1103,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     try {
       await this.sendToRadarr(event.entity as MediaRequest);
       await this.sendToSonarr(event.entity as MediaRequest);
+      await this.sendToBookshelf(event.entity as MediaRequest);
     } catch (e) {
       logger.error('Error while sending to *arr in afterUpdate subscriber', {
         label: 'Media Request',
@@ -1037,6 +1156,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     try {
       await this.sendToRadarr(event.entity as MediaRequest);
       await this.sendToSonarr(event.entity as MediaRequest);
+      await this.sendToBookshelf(event.entity as MediaRequest);
     } catch (e) {
       logger.error('Error while sending to *arr in afterInsert subscriber', {
         label: 'Media Request',

@@ -7,6 +7,7 @@ import {
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
+import { Permission } from '@server/lib/permissions';
 import type { BookshelfSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -68,14 +69,11 @@ audiobookRoutes.get('/search', async (req, res, next) => {
 });
 
 audiobookRoutes.post('/request', async (req, res, next) => {
-  const { foreignBookId, foreignAuthorId, authorName, title, searchNow } =
-    req.body as {
-      foreignBookId?: string;
-      foreignAuthorId?: string;
-      authorName?: string;
-      title?: string;
-      searchNow?: boolean;
-    };
+  const { foreignBookId, foreignAuthorId, authorName } = req.body as {
+    foreignBookId?: string;
+    foreignAuthorId?: string;
+    authorName?: string;
+  };
 
   if (!foreignBookId) {
     return next({ status: 400, message: 'foreignBookId is required' });
@@ -139,12 +137,19 @@ audiobookRoutes.post('/request', async (req, res, next) => {
       });
     }
 
+    const autoApprove = req.user.hasPermission(
+      [Permission.AUTO_APPROVE, Permission.MANAGE_REQUESTS],
+      { type: 'or' }
+    );
+
     const request = new MediaRequest({
       type: MediaType.AUDIOBOOK,
       media,
       requestedBy: req.user,
-      status: MediaRequestStatus.APPROVED,
-      modifiedBy: req.user,
+      status: autoApprove
+        ? MediaRequestStatus.APPROVED
+        : MediaRequestStatus.PENDING,
+      modifiedBy: autoApprove ? req.user : undefined,
       is4k: false,
       serverId: server.id,
       profileId: server.activeProfileId,
@@ -152,54 +157,19 @@ audiobookRoutes.post('/request', async (req, res, next) => {
       tags: [],
       isAutoRequest: false,
     });
+
+    // MediaRequestSubscriber.afterInsert/afterUpdate will fire sendToBookshelf
+    // when status is APPROVED, which performs the Bookshelf addBook and
+    // updates Media.status accordingly. Mirrors the Radarr/Sonarr flow.
     await requestRepository.save(request);
 
-    try {
-      const book = await getClient(server).addBook({
-        foreignBookId,
-        foreignAuthorId,
-        authorName,
-        profileId: server.activeProfileId,
-        metadataProfileId: server.activeMetadataProfileId,
-        rootFolderPath: server.activeDirectory,
-        monitored: true,
-        searchNow: searchNow ?? true,
-      });
-
-      // Use a targeted update rather than save(): saving the parent Media
-      // entity here triggers cascade on the OneToMany requests relation,
-      // which in turn can null out the FK on the request row we just
-      // inserted.
-      await mediaRepository.update(media.id, {
-        status: MediaStatus.PROCESSING,
-        serviceId: server.id,
-        externalServiceId: book.id ?? null,
-        externalServiceSlug: book.titleSlug ?? null,
-      });
-
-      logger.info('Audiobook request submitted', {
-        label: 'API',
-        bookId: book.id,
-        title: book.title,
-        requestedBy: req.user.id,
-      });
-
-      return res.status(201).json({ request, media, book });
-    } catch (e) {
-      // Mark the request as failed but keep the row so it shows in the log
-      request.status = MediaRequestStatus.FAILED;
-      await requestRepository.save(request);
-      logger.error('Audiobook addBook failed; request marked FAILED', {
-        label: 'API',
-        errorMessage: e.message,
-        foreignBookId,
-        title,
-      });
-      return next({
-        status: 500,
-        message: `Audiobook request failed: ${e.message}`,
-      });
-    }
+    return res.status(201).json({
+      request,
+      media,
+      message: autoApprove
+        ? 'Request approved; Bookshelf will pick it up shortly'
+        : 'Request pending admin approval',
+    });
   } catch (e) {
     logger.error('Audiobook request flow failed', {
       label: 'API',
