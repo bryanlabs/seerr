@@ -7,6 +7,7 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/solid';
 import axios from 'axios';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useToasts } from 'react-toast-notifications';
 
@@ -148,23 +149,34 @@ const BookSearch = ({ mediaType }: BookSearchProps) => {
           {results.map((b) => {
             const status = requested[b.foreignBookId];
             const author = guessAuthor(b.authorTitle, b.title);
+            const detailHref = `/${isAudio ? 'audiobooks' : 'ebooks'}/${b.foreignBookId}`;
             return (
               <li
                 key={b.foreignBookId}
-                className="flex gap-4 rounded-lg bg-gray-800 p-4 ring-1 ring-gray-700"
+                className="flex gap-4 rounded-lg bg-gray-800 p-4 ring-1 ring-gray-700 transition hover:ring-gray-500"
               >
-                {cover(b) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={cover(b)}
-                    alt=""
-                    className="h-32 w-20 flex-shrink-0 rounded object-cover"
-                  />
-                ) : (
-                  <div className="h-32 w-20 flex-shrink-0 rounded bg-gray-700" />
-                )}
+                <Link
+                  href={detailHref}
+                  className="flex-shrink-0 transition hover:scale-105"
+                >
+                  {cover(b) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={cover(b)}
+                      alt=""
+                      className="h-32 w-20 rounded object-cover"
+                    />
+                  ) : (
+                    <div className="h-32 w-20 rounded bg-gray-700" />
+                  )}
+                </Link>
                 <div className="flex flex-1 flex-col">
-                  <div className="font-semibold text-white">{b.title}</div>
+                  <Link
+                    href={detailHref}
+                    className="font-semibold text-white hover:underline"
+                  >
+                    {b.title}
+                  </Link>
                   {author && (
                     <div className="text-sm text-gray-400">{author}</div>
                   )}

@@ -10,6 +10,7 @@ import { MediaRequest } from '@server/entity/MediaRequest';
 import type { BookshelfSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import { guessAuthorName, mapBookDetails } from '@server/models/Book';
 import { Router } from 'express';
 
 /** Mirror of audiobook.ts for the ebook Bookshelf instance. */
@@ -216,6 +217,58 @@ ebookRoutes.get('/info/:foreignBookId', async (req, res, next) => {
     return next({
       status: 500,
       message: `Ebook info failed: ${e.message}`,
+    });
+  }
+});
+
+ebookRoutes.get('/:foreignBookId', async (req, res, next) => {
+  const server = findEbookServer();
+  if (!server) {
+    return next({
+      status: 503,
+      message: 'No ebook Bookshelf server is configured',
+    });
+  }
+  const tmdbId = Number(req.params.foreignBookId);
+  if (!Number.isFinite(tmdbId)) {
+    return next({ status: 400, message: 'foreignBookId must be numeric' });
+  }
+  try {
+    const client = getClient(server);
+    const results = await client.searchBook(`work:${req.params.foreignBookId}`);
+    const match = results[0];
+    if (!match) {
+      return next({ status: 404, message: 'Book not found' });
+    }
+    const guessedName = guessAuthorName(match.authorTitle, match.title);
+    let resolvedAuthor;
+    if (guessedName) {
+      const lookup = await client.searchAuthor(guessedName).catch(() => []);
+      resolvedAuthor = lookup[0];
+    }
+    const media = await getRepository(Media).findOne({
+      where: { tmdbId, mediaType: MediaType.EBOOK },
+      relations: { requests: true },
+    });
+    return res
+      .status(200)
+      .json(
+        mapBookDetails(
+          match,
+          MediaType.EBOOK,
+          resolvedAuthor,
+          media ?? undefined
+        )
+      );
+  } catch (e) {
+    logger.error('Ebook details failed', {
+      label: 'API',
+      errorMessage: e.message,
+      foreignBookId: req.params.foreignBookId,
+    });
+    return next({
+      status: 500,
+      message: `Ebook details failed: ${e.message}`,
     });
   }
 });

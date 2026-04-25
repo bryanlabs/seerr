@@ -114,22 +114,29 @@ const BookRequestItem = ({ request, revalidateList }: BookRequestItemProps) => {
     }
   };
 
+  const detailHref = `/${isAudio ? 'audiobooks' : 'ebooks'}/${request.media.tmdbId}`;
+
   return (
     <div
       ref={ref}
       className="relative flex w-full flex-col justify-between overflow-hidden rounded-xl bg-gray-800 py-2 text-gray-400 shadow-md ring-1 ring-gray-700 xl:h-28 xl:flex-row"
     >
       <div className="relative z-10 flex w-full items-center overflow-hidden pl-4 pr-4 sm:pr-0 xl:w-7/12 2xl:w-2/3">
-        {book && bookCover(book) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={bookCover(book)}
-            alt=""
-            className="h-auto w-12 flex-shrink-0 rounded-md object-cover"
-          />
-        ) : (
-          <div className="h-16 w-12 flex-shrink-0 rounded-md bg-gray-700" />
-        )}
+        <Link
+          href={detailHref}
+          className="flex-shrink-0 transition hover:scale-105"
+        >
+          {book && bookCover(book) ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={bookCover(book)}
+              alt=""
+              className="h-auto w-12 rounded-md object-cover"
+            />
+          ) : (
+            <div className="h-16 w-12 rounded-md bg-gray-700" />
+          )}
+        </Link>
         <div className="flex flex-col justify-center overflow-hidden pl-2 xl:pl-4">
           <div className="pt-0.5 text-xs font-medium text-white sm:pt-1">
             <Badge>{isAudio ? 'Audiobook' : 'Ebook'}</Badge>
@@ -137,9 +144,12 @@ const BookRequestItem = ({ request, revalidateList }: BookRequestItemProps) => {
               <span className="ml-2">{book.releaseDate.slice(0, 4)}</span>
             )}
           </div>
-          <div className="mr-2 min-w-0 truncate text-lg font-bold text-white xl:text-xl">
+          <Link
+            href={detailHref}
+            className="mr-2 min-w-0 truncate text-lg font-bold text-white hover:underline xl:text-xl"
+          >
             {book?.title ?? `Book #${request.media.tmdbId}`}
-          </div>
+          </Link>
           {book && guessBookAuthor(book) && (
             <div className="truncate text-sm text-gray-400">
               {guessBookAuthor(book)}
