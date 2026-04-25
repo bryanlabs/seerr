@@ -167,10 +167,10 @@ class BookshelfAPI extends ServarrBase<{
     try {
       // Bookshelf (Readarr) requires the author to exist before a book can be
       // added. The /book/lookup response includes the embedded author with
-      // foreignAuthorId (Hardcover author id via rreading-glasses proxy). If we
-      // already have that lookup result, POST /book with the embedded author
-      // block; Readarr will upsert the author.
-      const lookup = await this.searchBook(options.foreignBookId);
+      // foreignAuthorId (Hardcover author id via rreading-glasses proxy). The
+      // lookup endpoint resolves a specific work by foreignBookId via the
+      // `work:<id>` term prefix; passing the bare id returns no results.
+      const lookup = await this.searchBook(`work:${options.foreignBookId}`);
       const match =
         lookup.find((b) => b.foreignBookId === options.foreignBookId) ??
         lookup[0];
