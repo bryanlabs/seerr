@@ -210,6 +210,22 @@ audiobookRoutes.post('/request', async (req, res, next) => {
   }
 });
 
+audiobookRoutes.get('/queue', async (req, res, next) => {
+  const server = findAudiobookServer();
+  if (!server) {
+    return next({
+      status: 503,
+      message: 'No audiobook Bookshelf server is configured',
+    });
+  }
+  try {
+    const queue = await getClient(server).getQueue();
+    return res.status(200).json({ serverId: server.id, queue });
+  } catch {
+    return next({ status: 500, message: 'Failed to retrieve audiobook queue' });
+  }
+});
+
 audiobookRoutes.get('/info/:foreignBookId', async (req, res, next) => {
   const server = findAudiobookServer();
   if (!server) {
@@ -323,21 +339,5 @@ audiobookRoutes.get(
     }
   }
 );
-
-audiobookRoutes.get('/queue', async (req, res, next) => {
-  const server = findAudiobookServer();
-  if (!server) {
-    return next({
-      status: 503,
-      message: 'No audiobook Bookshelf server is configured',
-    });
-  }
-  try {
-    const queue = await getClient(server).getQueue();
-    return res.status(200).json({ serverId: server.id, queue });
-  } catch {
-    return next({ status: 500, message: 'Failed to retrieve audiobook queue' });
-  }
-});
 
 export default audiobookRoutes;

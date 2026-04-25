@@ -50,6 +50,97 @@ const isMovie = (movie: MovieDetails | TvDetails): movie is MovieDetails => {
   return (movie as MovieDetails).title !== undefined;
 };
 
+interface BookCardSummary {
+  title: string;
+  authorTitle?: string;
+  releaseDate?: string;
+  remoteCover?: string;
+  images?: { coverType: string; url: string; remoteUrl?: string }[];
+}
+
+const titleCaseRC = (s: string) =>
+  s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+const guessAuthorRC = (book: BookCardSummary) => {
+  if (!book.authorTitle) return '';
+  let s = book.authorTitle.replace(book.title, '').trim();
+  if (s.endsWith(',')) s = s.slice(0, -1).trim();
+  return titleCaseRC(s.split(/[, ]+/).filter(Boolean).slice(0, 4).join(' '));
+};
+const bookCoverRC = (book: BookCardSummary) =>
+  book.remoteCover ??
+  book.images?.find((i) => i.coverType === 'cover')?.remoteUrl ??
+  book.images?.find((i) => i.coverType === 'cover')?.url;
+
+const BookRequestCard = ({
+  request,
+}: {
+  request: NonFunctionProperties<MediaRequest>;
+}) => {
+  const { ref, inView } = useInView({ triggerOnce: true });
+  const isAudio = request.type === 'audiobook';
+  const apiBase = isAudio ? '/api/v1/audiobook' : '/api/v1/ebook';
+  const detailHref = `/${isAudio ? 'audiobooks' : 'ebooks'}/${request.media.tmdbId}`;
+  const { data: book } = useSWR<BookCardSummary>(
+    inView ? `${apiBase}/info/${request.media.tmdbId}` : null
+  );
+  const { data: requestData } = useSWR<NonFunctionProperties<MediaRequest>>(
+    `/api/v1/request/${request.id}`,
+    { fallbackData: request }
+  );
+  const cover = book ? bookCoverRC(book) : undefined;
+  const author = book ? guessAuthorRC(book) : '';
+
+  const status = requestData?.status ?? request.status;
+  let statusBadge: React.ReactNode;
+  if (status === MediaRequestStatus.DECLINED) {
+    statusBadge = <Badge badgeType="danger">Declined</Badge>;
+  } else if (status === MediaRequestStatus.FAILED) {
+    statusBadge = <Badge badgeType="danger">Failed</Badge>;
+  } else if (status === MediaRequestStatus.APPROVED) {
+    statusBadge = <Badge badgeType="success">Approved</Badge>;
+  } else {
+    statusBadge = <Badge>Pending</Badge>;
+  }
+
+  return (
+    <Link
+      href={detailHref}
+      ref={ref}
+      className="relative flex w-72 flex-col gap-3 rounded-xl bg-gray-700 p-4 shadow ring-1 ring-gray-700 transition hover:ring-gray-500 sm:w-96"
+    >
+      <div className="flex gap-3">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cover}
+            alt=""
+            className="h-32 w-20 flex-shrink-0 rounded-md object-cover shadow"
+          />
+        ) : (
+          <div className="h-32 w-20 flex-shrink-0 rounded-md bg-gray-800" />
+        )}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            {isAudio ? 'Audiobook' : 'Ebook'}
+            {book?.releaseDate?.slice(0, 4) && (
+              <span className="ml-2 text-gray-500">
+                {book.releaseDate.slice(0, 4)}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 truncate text-sm font-bold text-white">
+            {book?.title ?? `Book #${request.media.tmdbId}`}
+          </div>
+          {author && (
+            <div className="truncate text-xs text-gray-400">{author}</div>
+          )}
+          <div className="mt-auto pt-2">{statusBadge}</div>
+        </div>
+      </div>
+    </Link>
+  );
+};
+
 const RequestCardPlaceholder = () => {
   return (
     <div className="relative w-72 animate-pulse rounded-xl bg-gray-700 p-4 sm:w-96">
@@ -220,6 +311,14 @@ interface RequestCardProps {
 }
 
 const RequestCard = ({ request, onTitleData }: RequestCardProps) => {
+  if (request.type === 'audiobook' || request.type === 'ebook') {
+    return <BookRequestCard request={request} />;
+  }
+
+  return <MovieOrTvRequestCard request={request} onTitleData={onTitleData} />;
+};
+
+const MovieOrTvRequestCard = ({ request, onTitleData }: RequestCardProps) => {
   const { ref, inView } = useInView({
     triggerOnce: true,
   });

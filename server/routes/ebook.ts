@@ -196,6 +196,22 @@ ebookRoutes.post('/request', async (req, res, next) => {
   }
 });
 
+ebookRoutes.get('/queue', async (req, res, next) => {
+  const server = findEbookServer();
+  if (!server) {
+    return next({
+      status: 503,
+      message: 'No ebook Bookshelf server is configured',
+    });
+  }
+  try {
+    const queue = await getClient(server).getQueue();
+    return res.status(200).json({ serverId: server.id, queue });
+  } catch {
+    return next({ status: 500, message: 'Failed to retrieve ebook queue' });
+  }
+});
+
 ebookRoutes.get('/info/:foreignBookId', async (req, res, next) => {
   const server = findEbookServer();
   if (!server) {
@@ -304,22 +320,6 @@ ebookRoutes.get('/:foreignBookId/recommendations', async (req, res, next) => {
       status: 500,
       message: `Ebook recommendations failed: ${e.message}`,
     });
-  }
-});
-
-ebookRoutes.get('/queue', async (req, res, next) => {
-  const server = findEbookServer();
-  if (!server) {
-    return next({
-      status: 503,
-      message: 'No ebook Bookshelf server is configured',
-    });
-  }
-  try {
-    const queue = await getClient(server).getQueue();
-    return res.status(200).json({ serverId: server.id, queue });
-  } catch {
-    return next({ status: 500, message: 'Failed to retrieve ebook queue' });
   }
 });
 
