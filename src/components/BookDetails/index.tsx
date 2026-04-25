@@ -1,4 +1,5 @@
 import Spinner from '@app/assets/spinner.svg';
+import BookRequestModal from '@app/components/BookRequestModal';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
@@ -61,7 +62,7 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
     id ? `${apiBase}/${id}/recommendations` : null
   );
 
-  const [requesting, setRequesting] = useState(false);
+  const [showRequestModal, setShowRequestModal] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [managing, setManaging] = useState(false);
 
@@ -145,28 +146,9 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
       r.status === MediaRequestStatus.APPROVED
   );
 
-  const submitRequest = async () => {
-    setRequesting(true);
-    try {
-      await axios.post(`${apiBase}/request`, {
-        foreignBookId: data.foreignBookId,
-        authorName: data.authorName ?? data.author?.authorName,
-        title: data.title,
-      });
-      addToast(`Requested: ${data.title}`, {
-        appearance: 'success',
-        autoDismiss: true,
-      });
-      mutate();
-    } catch (e) {
-      const message =
-        (e as { response?: { data?: { message?: string } } }).response?.data
-          ?.message ?? 'Request failed';
-      addToast(message, { appearance: 'error', autoDismiss: true });
-    } finally {
-      setRequesting(false);
-    }
-  };
+  // The actual request submission lives inside BookRequestModal; we just
+  // open the modal here.
+  const openRequestModal = () => setShowRequestModal(true);
 
   const ratingValue = data.ratings?.value;
   const ratingVotes = data.ratings?.votes;
@@ -265,16 +247,8 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
               Processing
             </Button>
           ) : (
-            <Button
-              buttonType="primary"
-              onClick={submitRequest}
-              disabled={requesting}
-            >
-              {requesting ? (
-                <Spinner className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
-              )}
+            <Button buttonType="primary" onClick={openRequestModal}>
+              <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
               Request
             </Button>
           )}
@@ -528,6 +502,17 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
           onCancel={() => setShowIssueModal(false)}
         />
       )}
+
+      <BookRequestModal
+        show={showRequestModal}
+        mediaType={mediaType}
+        foreignBookId={data.foreignBookId}
+        authorName={data.authorName ?? data.author?.authorName}
+        title={data.title}
+        cover={cover}
+        onClose={() => setShowRequestModal(false)}
+        onComplete={() => mutate()}
+      />
     </div>
   );
 };

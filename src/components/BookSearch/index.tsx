@@ -1,3 +1,4 @@
+import BookRequestModal from '@app/components/BookRequestModal';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -54,6 +55,8 @@ const BookSearch = ({ mediaType }: BookSearchProps) => {
   const [requested, setRequested] = useState<
     Record<string, 'pending' | 'done'>
   >({});
+  const [activeRequest, setActiveRequest] =
+    useState<BookshelfBookResult | null>(null);
 
   const runSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -76,31 +79,8 @@ const BookSearch = ({ mediaType }: BookSearchProps) => {
     }
   };
 
-  const requestBook = async (book: BookshelfBookResult) => {
-    setRequested((prev) => ({ ...prev, [book.foreignBookId]: 'pending' }));
-    try {
-      const authorName = guessAuthor(book.authorTitle, book.title);
-      await axios.post(`${apiBase}/request`, {
-        foreignBookId: book.foreignBookId,
-        authorName,
-        title: book.title,
-      });
-      addToast(`Requested: ${book.title}`, {
-        appearance: 'success',
-        autoDismiss: true,
-      });
-      setRequested((prev) => ({ ...prev, [book.foreignBookId]: 'done' }));
-    } catch (e) {
-      const message =
-        (e as { response?: { data?: { message?: string } } }).response?.data
-          ?.message ?? 'Request failed';
-      addToast(message, { appearance: 'error', autoDismiss: true });
-      setRequested((prev) => {
-        const copy = { ...prev };
-        delete copy[book.foreignBookId];
-        return copy;
-      });
-    }
+  const openRequestModal = (book: BookshelfBookResult) => {
+    setActiveRequest(book);
   };
 
   const cover = (b: BookshelfBookResult): string | undefined =>
@@ -201,7 +181,7 @@ const BookSearch = ({ mediaType }: BookSearchProps) => {
                     ) : (
                       <Button
                         buttonType="primary"
-                        onClick={() => requestBook(b)}
+                        onClick={() => openRequestModal(b)}
                       >
                         <ArrowDownTrayIcon className="mr-1 h-4 w-4" />
                         Request
@@ -214,6 +194,28 @@ const BookSearch = ({ mediaType }: BookSearchProps) => {
           })}
         </ul>
       )}
+
+      <BookRequestModal
+        show={!!activeRequest}
+        mediaType={mediaType}
+        foreignBookId={activeRequest?.foreignBookId ?? ''}
+        title={activeRequest?.title}
+        authorName={
+          activeRequest
+            ? guessAuthor(activeRequest.authorTitle, activeRequest.title)
+            : undefined
+        }
+        cover={activeRequest ? cover(activeRequest) : undefined}
+        onClose={() => setActiveRequest(null)}
+        onComplete={() => {
+          if (activeRequest) {
+            setRequested((prev) => ({
+              ...prev,
+              [activeRequest.foreignBookId]: 'done',
+            }));
+          }
+        }}
+      />
     </>
   );
 };

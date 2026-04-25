@@ -873,7 +873,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       // by foreignBookId from Bookshelf.
       const BookshelfAPI = (await import('@server/api/servarr/bookshelf'))
         .default;
-      const { guessAuthorName } = await import('@server/models/Book');
+      const { guessAuthorCandidates } = await import('@server/models/Book');
       const client = new BookshelfAPI({
         apiKey: server.apiKey,
         url: BookshelfAPI.buildUrl(server, '/api/v1'),
@@ -888,13 +888,43 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         });
         return;
       }
-      const authorName = guessAuthorName(match.authorTitle, match.title);
+
+      // Bookshelf's authorTitle is junk-formatted; try multiple
+      // candidate parses against /author/lookup until one matches.
+      const candidates = guessAuthorCandidates(match.authorTitle, match.title);
+      let resolvedForeignAuthorId: string | undefined;
+      let resolvedAuthorName: string | undefined;
+      for (const candidate of candidates) {
+        const result = await client.searchAuthor(candidate).catch(() => []);
+        const top = result[0];
+        if (top?.foreignAuthorId) {
+          resolvedForeignAuthorId = top.foreignAuthorId;
+          resolvedAuthorName = top.authorName;
+          break;
+        }
+      }
+
+      if (!resolvedForeignAuthorId) {
+        logger.error('Could not resolve author from any candidate', {
+          label: 'Media Request',
+          requestId: entity.id,
+          authorTitle: match.authorTitle,
+          candidates,
+        });
+        const requestRepository = getRepository(MediaRequest);
+        entity.status = MediaRequestStatus.FAILED;
+        await requestRepository.save(entity);
+        return;
+      }
 
       try {
         const book = await client.addBook({
           foreignBookId: String(media.tmdbId),
-          authorName,
-          profileId: server.activeProfileId,
+          foreignAuthorId: resolvedForeignAuthorId,
+          authorName: resolvedAuthorName,
+          // Honor the per-request quality profile override stored on the
+          // MediaRequest (set via the modal's Quality Profile dropdown).
+          profileId: entity.profileId ?? server.activeProfileId,
           metadataProfileId: server.activeMetadataProfileId,
           rootFolderPath: server.activeDirectory,
           monitored: true,

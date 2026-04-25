@@ -62,19 +62,63 @@ const titleCase = (s: string): string =>
 
 /**
  * Bookshelf returns `authorTitle` as a junk-formatted string like
- * "baroness, orczy, emmuska orczy The Scarlet Pimpernel". Strip the trailing
- * book title and the leading honorifics/commas to recover the author name.
+ * "weir, andy The Martian" or
+ * "baroness, orczy, emmuska orczy The Scarlet Pimpernel".
+ *
+ * The leading comma-separated chunk is "lastname, firstname [extras]"; we
+ * try several candidates and let the caller pick the one that resolves
+ * against /author/lookup.
  */
+export const guessAuthorCandidates = (
+  authorTitle: string | undefined,
+  title: string
+): string[] => {
+  if (!authorTitle) return [];
+  let s = authorTitle.replace(title, '').trim();
+  if (s.endsWith(',')) s = s.slice(0, -1).trim();
+  const out: string[] = [];
+
+  const seen = new Set<string>();
+  const push = (candidate: string) => {
+    const c = titleCase(candidate.trim()).replace(/\s+/g, ' ');
+    if (c && !seen.has(c.toLowerCase())) {
+      seen.add(c.toLowerCase());
+      out.push(c);
+    }
+  };
+
+  // 1) Comma-separated form: "last, first [extra extra]"
+  if (s.includes(',')) {
+    const parts = s
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length >= 2) {
+      // Reorder: "first last" using the first two parts
+      push(`${parts[1]} ${parts[0]}`);
+      // If the trailing chunk repeats the surname e.g. "orczy, emmuska orczy",
+      // the third-or-later part often contains the canonical full name.
+      for (let i = 2; i < parts.length; i++) push(parts[i]);
+      // Also try the simple two-part reverse
+      push(parts.slice().reverse().join(' '));
+    }
+  }
+
+  // 2) Whole-string fallback (in case the above misses)
+  push(s);
+
+  // 3) Just the first comma-separated chunk (lastname only)
+  const firstComma = s.split(',')[0]?.trim();
+  if (firstComma) push(firstComma);
+
+  return out;
+};
+
+/** Backwards-compatible: returns the first candidate or an empty string. */
 export const guessAuthorName = (
   authorTitle: string | undefined,
   title: string
-): string => {
-  if (!authorTitle) return '';
-  let s = authorTitle.replace(title, '').trim();
-  if (s.endsWith(',')) s = s.slice(0, -1).trim();
-  const tokens = s.split(/[, ]+/).filter(Boolean);
-  return titleCase(tokens.slice(0, 4).join(' '));
-};
+): string => guessAuthorCandidates(authorTitle, title)[0] ?? '';
 
 export const mapBookDetails = (
   book: BookshelfBook,

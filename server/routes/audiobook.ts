@@ -68,12 +68,42 @@ audiobookRoutes.get('/search', async (req, res, next) => {
   }
 });
 
+audiobookRoutes.get('/profiles', async (_req, res, next) => {
+  const server = findAudiobookServer();
+  if (!server) {
+    return next({
+      status: 503,
+      message: 'No audiobook Bookshelf server is configured',
+    });
+  }
+  try {
+    const client = getClient(server);
+    const [profiles, metadataProfiles] = await Promise.all([
+      client.getProfiles(),
+      client.getMetadataProfiles(),
+    ]);
+    return res.status(200).json({
+      profiles,
+      metadataProfiles,
+      defaultProfileId: server.activeProfileId,
+      defaultMetadataProfileId: server.activeMetadataProfileId,
+    });
+  } catch (e) {
+    return next({
+      status: 500,
+      message: `Profiles fetch failed: ${e.message}`,
+    });
+  }
+});
+
 audiobookRoutes.post('/request', async (req, res, next) => {
-  const { foreignBookId, foreignAuthorId, authorName } = req.body as {
-    foreignBookId?: string;
-    foreignAuthorId?: string;
-    authorName?: string;
-  };
+  const { foreignBookId, foreignAuthorId, authorName, profileId } =
+    req.body as {
+      foreignBookId?: string;
+      foreignAuthorId?: string;
+      authorName?: string;
+      profileId?: number;
+    };
 
   if (!foreignBookId) {
     return next({ status: 400, message: 'foreignBookId is required' });
@@ -152,7 +182,7 @@ audiobookRoutes.post('/request', async (req, res, next) => {
       modifiedBy: autoApprove ? req.user : undefined,
       is4k: false,
       serverId: server.id,
-      profileId: server.activeProfileId,
+      profileId: profileId ?? server.activeProfileId,
       rootFolder: server.activeDirectory,
       tags: [],
       isAutoRequest: false,
