@@ -371,6 +371,7 @@ export type JobId =
   | 'plex-refresh-token'
   | 'radarr-scan'
   | 'sonarr-scan'
+  | 'bookshelf-sync'
   | 'download-sync'
   | 'download-sync-reset'
   | 'jellyfin-recently-added-scan'
@@ -595,6 +596,9 @@ class Settings {
         },
         'sonarr-scan': {
           schedule: '0 30 4 * * *',
+        },
+        'bookshelf-sync': {
+          schedule: '0 */5 * * * *',
         },
         'availability-sync': {
           schedule: '0 0 5 * * *',

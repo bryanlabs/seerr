@@ -1,6 +1,7 @@
 import { MediaServerType } from '@server/constants/server';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
 import availabilitySync from '@server/lib/availabilitySync';
+import bookshelfSync from '@server/lib/bookshelfSync';
 import downloadTracker from '@server/lib/downloadtracker';
 import ImageProxy from '@server/lib/imageproxy';
 import refreshToken from '@server/lib/refreshToken';
@@ -207,6 +208,27 @@ export const startJobs = (): void => {
       });
       downloadTracker.updateDownloads();
     }),
+  });
+
+  // Bookshelf availability sync — polls Bookshelf for completed grabs and
+  // flips Media.status to AVAILABLE so MEDIA_AVAILABLE notifications fire.
+  scheduledJobs.push({
+    id: 'bookshelf-sync',
+    name: 'Bookshelf Sync',
+    type: 'process',
+    interval: 'minutes',
+    cronSchedule: jobs['bookshelf-sync']?.schedule ?? '0 */5 * * * *',
+    job: schedule.scheduleJob(
+      jobs['bookshelf-sync']?.schedule ?? '0 */5 * * * *',
+      () => {
+        logger.debug('Starting scheduled job: Bookshelf Sync', {
+          label: 'Jobs',
+        });
+        bookshelfSync.run();
+      }
+    ),
+    running: () => bookshelfSync.status().running,
+    cancelFn: () => bookshelfSync.cancel(),
   });
 
   // Reset download sync everyday at 01:00 am
