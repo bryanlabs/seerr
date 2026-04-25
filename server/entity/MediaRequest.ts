@@ -729,7 +729,14 @@ export class MediaRequest {
     const tmdb = new TheMovieDb();
 
     try {
-      const mediaType = entity.type === MediaType.MOVIE ? 'Movie' : 'Series';
+      const mediaType =
+        entity.type === MediaType.MOVIE
+          ? 'Movie'
+          : entity.type === MediaType.AUDIOBOOK
+            ? 'Audiobook'
+            : entity.type === MediaType.EBOOK
+              ? 'Ebook'
+              : 'Series';
       let event: string | undefined;
       let notifyAdmin = true;
       let notifySystem = true;
@@ -812,6 +819,24 @@ export class MediaRequest {
                 .join(', '),
             },
           ],
+        });
+      } else if (
+        entity.type === MediaType.AUDIOBOOK ||
+        entity.type === MediaType.EBOOK
+      ) {
+        // Books don't have TMDB metadata; we send a minimal notification
+        // using the media row + book id. Phase 2 can enrich the subject by
+        // resolving the title from Bookshelf, but that requires an extra
+        // network call inside the notifier, so we keep it lightweight here.
+        notificationManager.sendNotification(type, {
+          media,
+          request: entity,
+          notifyAdmin,
+          notifySystem,
+          notifyUser: notifyAdmin ? undefined : entity.requestedBy,
+          event,
+          subject: `${mediaType} (Hardcover work ${media.tmdbId})`,
+          message: '',
         });
       }
     } catch (e) {

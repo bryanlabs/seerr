@@ -16,6 +16,7 @@ import {
   CogIcon,
   ExclamationTriangleIcon,
   StarIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
 import type { BookDetails as BookDetailsType } from '@server/models/Book';
@@ -62,6 +63,49 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
 
   const [requesting, setRequesting] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
+  const [managing, setManaging] = useState(false);
+
+  const setMediaStatus = async (
+    status: 'available' | 'pending' | 'processing' | 'unknown'
+  ) => {
+    if (!data?.mediaInfo?.id) return;
+    setManaging(true);
+    try {
+      await axios.post(`/api/v1/media/${data.mediaInfo.id}/${status}`);
+      addToast(`Marked as ${status}`, {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      mutate();
+    } catch {
+      addToast('Failed to update status', {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      setManaging(false);
+    }
+  };
+
+  const removeFromBookshelf = async () => {
+    if (!data?.mediaInfo?.id) return;
+    setManaging(true);
+    try {
+      await axios.delete(`/api/v1/media/${data.mediaInfo.id}/bookfile`);
+      addToast('Book removed from Bookshelf', {
+        appearance: 'success',
+        autoDismiss: true,
+      });
+      mutate();
+    } catch {
+      addToast('Failed to remove from Bookshelf', {
+        appearance: 'error',
+        autoDismiss: true,
+      });
+    } finally {
+      setManaging(false);
+    }
+  };
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -255,6 +299,51 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
             )}
         </div>
       </div>
+
+      {data.mediaInfo && hasPermission(Permission.MANAGE_REQUESTS) && (
+        <div className="mt-4 flex flex-wrap gap-2 rounded-md bg-gray-800 p-3 ring-1 ring-gray-700">
+          <span className="self-center text-sm font-semibold text-gray-300">
+            Admin:
+          </span>
+          <Button
+            buttonType="success"
+            onClick={() => setMediaStatus('available')}
+            disabled={managing}
+          >
+            <CheckIcon className="mr-1 h-4 w-4" />
+            Mark Available
+          </Button>
+          <Button
+            buttonType="default"
+            onClick={() => setMediaStatus('pending')}
+            disabled={managing}
+          >
+            Mark Pending
+          </Button>
+          <Button
+            buttonType="warning"
+            onClick={() => setMediaStatus('processing')}
+            disabled={managing}
+          >
+            Mark Processing
+          </Button>
+          <Button
+            buttonType="danger"
+            onClick={removeFromBookshelf}
+            disabled={managing}
+          >
+            <TrashIcon className="mr-1 h-4 w-4" />
+            Delete from Bookshelf
+          </Button>
+          <Button
+            buttonType="default"
+            onClick={() => mutate()}
+            disabled={managing}
+          >
+            Refresh
+          </Button>
+        </div>
+      )}
       <div className="media-overview">
         <div className="media-overview-left">
           <div className="text-2xl font-bold text-white">Overview</div>

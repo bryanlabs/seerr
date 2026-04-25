@@ -105,18 +105,11 @@ export const mapBookDetails = (
     authorName,
     releaseDate: book.releaseDate,
     pageCount: book.pageCount,
-    remoteCover:
-      'remoteCover' in book
-        ? (book as { remoteCover?: string }).remoteCover
-        : undefined,
+    remoteCover: book.remoteCover,
     images: book.images,
-    ratings:
-      'ratings' in book
-        ? (book as { ratings?: { value?: number; votes?: number } }).ratings
-        : undefined,
-    genres:
-      'genres' in book ? (book as { genres?: string[] }).genres : undefined,
-    links: 'links' in book ? (book as { links?: BookLink[] }).links : undefined,
+    ratings: book.ratings,
+    genres: book.genres,
+    links: book.links,
     editions: book.editions,
     mediaType,
     mediaInfo: media,

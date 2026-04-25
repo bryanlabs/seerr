@@ -52,6 +52,17 @@ export interface BookshelfBook {
     addType?: 'automatic' | 'manual';
   };
   images?: BookshelfAuthorImage[];
+  remoteCover?: string;
+  ratings?: {
+    value?: number;
+    votes?: number;
+    popularity?: number;
+  };
+  genres?: string[];
+  links?: {
+    url: string;
+    name: string;
+  }[];
   editions?: {
     id?: number;
     title?: string;
@@ -60,8 +71,15 @@ export interface BookshelfBook {
     asin?: string;
     format?: string;
     language?: string;
+    pageCount?: number;
     monitored?: boolean;
   }[];
+  statistics?: {
+    bookFileCount?: number;
+    bookCount?: number;
+    sizeOnDisk?: number;
+    percentOfBooks?: number;
+  };
 }
 
 export interface AddBookOptions {
