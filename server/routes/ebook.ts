@@ -154,11 +154,14 @@ ebookRoutes.post('/request', async (req, res, next) => {
         searchNow: searchNow ?? true,
       });
 
-      media.status = MediaStatus.PROCESSING;
-      media.serviceId = server.id;
-      if (book.id) media.externalServiceId = book.id;
-      if (book.titleSlug) media.externalServiceSlug = book.titleSlug;
-      await mediaRepository.save(media);
+      // Targeted update to avoid the OneToMany cascade nulling the FK on
+      // the request row we just inserted (see audiobook.ts comment).
+      await mediaRepository.update(media.id, {
+        status: MediaStatus.PROCESSING,
+        serviceId: server.id,
+        externalServiceId: book.id ?? null,
+        externalServiceSlug: book.titleSlug ?? null,
+      });
 
       logger.info('Ebook request submitted', {
         label: 'API',
