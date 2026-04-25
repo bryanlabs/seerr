@@ -206,8 +206,25 @@ class BookshelfAPI extends ServarrBase<{
         foreignAuthorId = resolvedAuthor.foreignAuthorId;
       }
 
+      // Bookshelf's BookResource mapper iterates over Editions unconditionally
+      // and 500s with ArgumentNullException if the field is missing. Synthesize
+      // an editions array from the lookup's foreignEditionId so the mapper has
+      // something to walk.
+      const editions = match.editions?.length
+        ? match.editions
+        : match.foreignEditionId
+          ? [
+              {
+                foreignEditionId: match.foreignEditionId,
+                title: match.title,
+                monitored: true,
+              },
+            ]
+          : [];
+
       const payload: Partial<BookshelfBook> & Record<string, unknown> = {
         ...match,
+        editions,
         qualityProfileId: options.profileId,
         metadataProfileId: options.metadataProfileId,
         rootFolderPath: options.rootFolderPath,
