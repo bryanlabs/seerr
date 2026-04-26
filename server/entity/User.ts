@@ -134,6 +134,18 @@ export class User {
   @Column({ nullable: true })
   public tvQuotaDays?: number;
 
+  @Column({ nullable: true })
+  public audiobookQuotaLimit?: number;
+
+  @Column({ nullable: true })
+  public audiobookQuotaDays?: number;
+
+  @Column({ nullable: true })
+  public ebookQuotaLimit?: number;
+
+  @Column({ nullable: true })
+  public ebookQuotaDays?: number;
+
   @OneToOne(() => UserSettings, (settings) => settings.user, {
     cascade: true,
     eager: true,
@@ -347,6 +359,48 @@ export class User {
         ).reduce((sum: number, req: MediaRequest) => sum + req.seasonCount, 0)
       : 0;
 
+    const audiobookQuotaLimit = !canBypass
+      ? (this.audiobookQuotaLimit ?? defaultQuotas.audiobook?.quotaLimit)
+      : 0;
+    const audiobookQuotaDays =
+      this.audiobookQuotaDays ?? defaultQuotas.audiobook?.quotaDays;
+    const audiobookDate = new Date();
+    if (audiobookQuotaDays) {
+      audiobookDate.setDate(audiobookDate.getDate() - audiobookQuotaDays);
+    }
+    const audiobookQuotaUsed = audiobookQuotaLimit
+      ? await requestRepository.count({
+          where: {
+            requestedBy: { id: this.id },
+            ...(audiobookQuotaDays
+              ? { createdAt: AfterDate(audiobookDate) }
+              : {}),
+            type: MediaType.AUDIOBOOK,
+            status: Not(MediaRequestStatus.DECLINED),
+          },
+        })
+      : 0;
+
+    const ebookQuotaLimit = !canBypass
+      ? (this.ebookQuotaLimit ?? defaultQuotas.ebook?.quotaLimit)
+      : 0;
+    const ebookQuotaDays =
+      this.ebookQuotaDays ?? defaultQuotas.ebook?.quotaDays;
+    const ebookDate = new Date();
+    if (ebookQuotaDays) {
+      ebookDate.setDate(ebookDate.getDate() - ebookQuotaDays);
+    }
+    const ebookQuotaUsed = ebookQuotaLimit
+      ? await requestRepository.count({
+          where: {
+            requestedBy: { id: this.id },
+            ...(ebookQuotaDays ? { createdAt: AfterDate(ebookDate) } : {}),
+            type: MediaType.EBOOK,
+            status: Not(MediaRequestStatus.DECLINED),
+          },
+        })
+      : 0;
+
     return {
       movie: {
         days: movieQuotaDays,
@@ -367,6 +421,28 @@ export class User {
           ? Math.max(0, tvQuotaLimit - tvQuotaUsed)
           : undefined,
         restricted: !!(tvQuotaLimit && tvQuotaLimit - tvQuotaUsed <= 0),
+      },
+      audiobook: {
+        days: audiobookQuotaDays,
+        limit: audiobookQuotaLimit,
+        used: audiobookQuotaUsed,
+        remaining: audiobookQuotaLimit
+          ? Math.max(0, audiobookQuotaLimit - audiobookQuotaUsed)
+          : undefined,
+        restricted: !!(
+          audiobookQuotaLimit && audiobookQuotaLimit - audiobookQuotaUsed <= 0
+        ),
+      },
+      ebook: {
+        days: ebookQuotaDays,
+        limit: ebookQuotaLimit,
+        used: ebookQuotaUsed,
+        remaining: ebookQuotaLimit
+          ? Math.max(0, ebookQuotaLimit - ebookQuotaUsed)
+          : undefined,
+        restricted: !!(
+          ebookQuotaLimit && ebookQuotaLimit - ebookQuotaUsed <= 0
+        ),
       },
     };
   }

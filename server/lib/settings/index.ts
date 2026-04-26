@@ -150,6 +150,8 @@ export interface MainSettings {
   defaultQuotas: {
     movie: Quota;
     tv: Quota;
+    audiobook?: Quota;
+    ebook?: Quota;
   };
   hideAvailable: boolean;
   hideBlocklisted: boolean;
@@ -372,6 +374,7 @@ export type JobId =
   | 'radarr-scan'
   | 'sonarr-scan'
   | 'bookshelf-sync'
+  | 'hardcover-watchlist-sync'
   | 'download-sync'
   | 'download-sync-reset'
   | 'jellyfin-recently-added-scan'
@@ -423,6 +426,8 @@ class Settings {
         defaultQuotas: {
           movie: {},
           tv: {},
+          audiobook: {},
+          ebook: {},
         },
         hideAvailable: false,
         hideBlocklisted: false,
@@ -599,6 +604,9 @@ class Settings {
         },
         'bookshelf-sync': {
           schedule: '0 */5 * * * *',
+        },
+        'hardcover-watchlist-sync': {
+          schedule: '*/60 * * * * *',
         },
         'availability-sync': {
           schedule: '0 0 5 * * *',

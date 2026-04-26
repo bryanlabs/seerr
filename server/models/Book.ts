@@ -37,6 +37,8 @@ export interface BookDetails {
   bookshelfId?: number;
   /** Hardcover work id, used as the canonical book identifier in the URL */
   foreignBookId: string;
+  /** Hardcover slug used to build hardcover.app URLs (e.g. "mistborn") */
+  hardcoverSlug?: string;
   foreignEditionId?: string;
   title: string;
   overview?: string;
@@ -131,6 +133,8 @@ export const mapBookDetails = (
   return {
     bookshelfId: book.id,
     foreignBookId: book.foreignBookId,
+    hardcoverSlug: (book as BookshelfBook & { hardcoverSlug?: string })
+      .hardcoverSlug,
     foreignEditionId: book.foreignEditionId,
     title: book.title,
     overview: book.overview,
@@ -155,6 +159,105 @@ export const mapBookDetails = (
     genres: book.genres,
     links: book.links,
     editions: book.editions,
+    mediaType,
+    mediaInfo: media,
+  };
+};
+
+interface HardcoverDetailShape {
+  id: number;
+  title: string;
+  slug: string | null;
+  release_date: string | null;
+  users_count: number;
+  rating: number | null;
+  pages: number | null;
+  description: string | null;
+  image: { url: string } | null;
+  cached_tags: { Genre?: { tag: string }[] } | null;
+  contributions: {
+    author: {
+      id: number;
+      name: string;
+      slug: string | null;
+      bio: string | null;
+      image: { url: string } | null;
+    } | null;
+  }[];
+  editions: {
+    id: number;
+    title: string | null;
+    pages: number | null;
+    release_date: string | null;
+    isbn_13: string | null;
+    audio_seconds: number | null;
+    image: { url: string } | null;
+  }[];
+}
+
+/**
+ * Map the single-shot Hardcover GraphQL response to the BookDetails shape
+ * the UI expects. We keep parity with the Bookshelf-mapper output so the
+ * detail page renders identically — only difference is bookshelfId is
+ * sourced from the local Media row (only present after a request was made)
+ * instead of the synthetic Bookshelf-side id.
+ */
+export const mapHardcoverToBookDetails = (
+  d: HardcoverDetailShape,
+  mediaType: BookDetails['mediaType'],
+  media?: Media
+): BookDetails => {
+  const primary = d.contributions
+    .map((c) => c.author)
+    .filter((a): a is NonNullable<typeof a> => !!a)[0];
+  const authorName = primary?.name ?? '';
+  const genres = (d.cached_tags?.Genre ?? []).map((g) => g.tag).filter(Boolean);
+  return {
+    bookshelfId: media?.externalServiceId ?? undefined,
+    foreignBookId: String(d.id),
+    hardcoverSlug: d.slug ?? undefined,
+    foreignEditionId: d.editions?.[0]?.id
+      ? String(d.editions[0].id)
+      : undefined,
+    title: d.title,
+    overview: d.description ?? undefined,
+    authorTitle: authorName ? `${authorName} ${d.title}` : undefined,
+    author: primary
+      ? {
+          authorName: primary.name,
+          foreignAuthorId: String(primary.id),
+          titleSlug: primary.slug ?? undefined,
+          overview: primary.bio ?? undefined,
+          images: primary.image
+            ? [
+                {
+                  coverType: 'poster',
+                  url: primary.image.url,
+                  remoteUrl: primary.image.url,
+                },
+              ]
+            : undefined,
+        }
+      : undefined,
+    authorName,
+    releaseDate: d.release_date ?? undefined,
+    pageCount: d.pages ?? undefined,
+    remoteCover: d.image?.url ?? undefined,
+    images: d.image
+      ? [{ coverType: 'cover', url: d.image.url, remoteUrl: d.image.url }]
+      : undefined,
+    ratings:
+      d.rating != null ? { value: d.rating, votes: d.users_count } : undefined,
+    genres: genres.length ? genres : undefined,
+    links: undefined,
+    editions: d.editions?.map((e) => ({
+      id: e.id,
+      title: e.title ?? undefined,
+      foreignEditionId: String(e.id),
+      isbn13: e.isbn_13 ?? undefined,
+      pageCount: e.pages ?? undefined,
+      format: e.audio_seconds && e.audio_seconds > 0 ? 'audio' : undefined,
+    })),
     mediaType,
     mediaInfo: media,
   };

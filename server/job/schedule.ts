@@ -3,6 +3,7 @@ import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
 import availabilitySync from '@server/lib/availabilitySync';
 import bookshelfSync from '@server/lib/bookshelfSync';
 import downloadTracker from '@server/lib/downloadtracker';
+import hardcoverWatchlistSync from '@server/lib/hardcoverWatchlistSync';
 import ImageProxy from '@server/lib/imageproxy';
 import refreshToken from '@server/lib/refreshToken';
 import {
@@ -229,6 +230,29 @@ export const startJobs = (): void => {
     ),
     running: () => bookshelfSync.status().running,
     cancelFn: () => bookshelfSync.cancel(),
+  });
+
+  // Hardcover Want-to-Read sync — for users who set hardcoverUsername +
+  // autoRequestAudiobooks/Ebooks, fetches their want-to-read list and creates
+  // requests for new entries (scoped to the matching user).
+  scheduledJobs.push({
+    id: 'hardcover-watchlist-sync',
+    name: 'Hardcover Watchlist Sync',
+    type: 'process',
+    interval: 'minutes',
+    cronSchedule:
+      jobs['hardcover-watchlist-sync']?.schedule ?? '*/60 * * * * *',
+    job: schedule.scheduleJob(
+      jobs['hardcover-watchlist-sync']?.schedule ?? '*/60 * * * * *',
+      () => {
+        logger.debug('Starting scheduled job: Hardcover Watchlist Sync', {
+          label: 'Jobs',
+        });
+        hardcoverWatchlistSync.run();
+      }
+    ),
+    running: () => hardcoverWatchlistSync.status().running,
+    cancelFn: () => hardcoverWatchlistSync.cancel(),
   });
 
   // Reset download sync everyday at 01:00 am

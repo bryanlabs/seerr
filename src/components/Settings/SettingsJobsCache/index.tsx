@@ -88,6 +88,8 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
     'sonarr-scan': 'Sonarr Scan',
     'download-sync': 'Download Sync',
     'download-sync-reset': 'Download Sync Reset',
+    'bookshelf-sync': 'Bookshelf Sync',
+    'hardcover-watchlist-sync': 'Hardcover Watchlist Sync',
     'image-cache-cleanup': 'Image Cache Cleanup',
     'process-blocklisted-tags': 'Process Blocklisted Tags',
     editJobSchedule: 'Modify Job',

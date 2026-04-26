@@ -1,3 +1,4 @@
+import { getHardcoverClient } from '@server/api/hardcover';
 import TheMovieDb from '@server/api/themoviedb';
 import { ANIME_KEYWORD_ID } from '@server/api/themoviedb/constants';
 import type { TmdbKeyword } from '@server/api/themoviedb/interfaces';
@@ -824,10 +825,41 @@ export class MediaRequest {
         entity.type === MediaType.AUDIOBOOK ||
         entity.type === MediaType.EBOOK
       ) {
-        // Books don't have TMDB metadata; we send a minimal notification
-        // using the media row + book id. Phase 2 can enrich the subject by
-        // resolving the title from Bookshelf, but that requires an extra
-        // network call inside the notifier, so we keep it lightweight here.
+        // Look up the title + author + cover from Hardcover so the subject
+        // reads as the actual book name and the message includes a real
+        // overview. Falls back to the placeholder if Hardcover is unreachable.
+        let subject = `${mediaType} (Hardcover work ${media.tmdbId})`;
+        let message = '';
+        let image: string | undefined;
+        const hardcover = getHardcoverClient();
+        if (hardcover) {
+          try {
+            const detail = await hardcover.getBookFullDetail(media.tmdbId);
+            if (detail) {
+              const author = detail.contributions
+                .map((c) => c.author?.name)
+                .filter(Boolean)[0];
+              const year = detail.release_date
+                ? ` (${detail.release_date.slice(0, 4)})`
+                : '';
+              subject = `${detail.title}${year}${author ? `, ${author}` : ''}`;
+              if (detail.description) {
+                message = truncate(detail.description, {
+                  length: 500,
+                  separator: /\s/,
+                  omission: '…',
+                });
+              }
+              image = detail.image?.url;
+            }
+          } catch (e) {
+            logger.warn('Hardcover enrichment for notification failed', {
+              label: 'Notifications',
+              tmdbId: media.tmdbId,
+              message: (e as Error).message,
+            });
+          }
+        }
         notificationManager.sendNotification(type, {
           media,
           request: entity,
@@ -835,8 +867,9 @@ export class MediaRequest {
           notifySystem,
           notifyUser: notifyAdmin ? undefined : entity.requestedBy,
           event,
-          subject: `${mediaType} (Hardcover work ${media.tmdbId})`,
-          message: '',
+          subject,
+          message,
+          image,
         });
       }
     } catch (e) {

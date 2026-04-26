@@ -411,7 +411,7 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
               <div className="media-fact">
                 <span>Hardcover ID</span>
                 <a
-                  href={`https://hardcover.app/books/${data.foreignBookId}`}
+                  href={`https://hardcover.app/books/${data.hardcoverSlug ?? data.foreignBookId}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="media-fact-value flex items-center gap-1 hover:underline"

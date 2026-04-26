@@ -1,3 +1,4 @@
+import { getHardcoverClient } from '@server/api/hardcover';
 import BookshelfAPI from '@server/api/servarr/bookshelf';
 import {
   MediaRequestStatus,
@@ -11,7 +12,7 @@ import { Permission } from '@server/lib/permissions';
 import type { BookshelfSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { guessAuthorName, mapBookDetails } from '@server/models/Book';
+import { mapHardcoverToBookDetails } from '@server/models/Book';
 import { Router } from 'express';
 
 /** Mirror of audiobook.ts for the ebook Bookshelf instance. */
@@ -47,7 +48,22 @@ ebookRoutes.get('/search', async (req, res, next) => {
 
   try {
     const results = await getClient(server).searchBook(term);
-    return res.status(200).json({ term, results });
+    const mediaRows = await Media.getRelatedMedia(
+      req.user!,
+      results.map((r) => ({
+        tmdbId: Number(r.foreignBookId),
+        mediaType: 'ebook',
+      }))
+    );
+    const enriched = results.map((r) => ({
+      ...r,
+      mediaInfo: mediaRows.find(
+        (m) =>
+          m.tmdbId === Number(r.foreignBookId) &&
+          m.mediaType === MediaType.EBOOK
+      ),
+    }));
+    return res.status(200).json({ term, results: enriched });
   } catch (e) {
     logger.error('Ebook search failed', {
       label: 'API',
@@ -56,6 +72,104 @@ ebookRoutes.get('/search', async (req, res, next) => {
     });
     return next({ status: 500, message: 'Ebook search failed' });
   }
+});
+
+ebookRoutes.get('/tags', async (req, res) => {
+  const client = getHardcoverClient();
+  if (!client) return res.status(200).json({ results: [] });
+  const cat = Number(req.query.category) || 1;
+  const limit = Math.min(Number(req.query.limit) || 40, 100);
+  const tags = await client.getTopTags(cat, limit);
+  return res.status(200).json({ results: tags });
+});
+
+// Best-effort cache to throttle pre-warm calls — same as audiobook side; the
+// Hardcover cache is the only one we need to warm now that detail pages go
+// Hardcover-direct.
+const warmedEbookIds = new Set<number>();
+function preWarmHardcover(ids: (number | string | undefined)[]) {
+  const client = getHardcoverClient();
+  if (!client) return;
+  for (const raw of ids) {
+    const id = Number(raw);
+    if (!Number.isFinite(id) || warmedEbookIds.has(id)) continue;
+    warmedEbookIds.add(id);
+    client.getBookFullDetail(id).catch(() => {
+      warmedEbookIds.delete(id);
+    });
+  }
+}
+
+ebookRoutes.get('/discover', async (req, res) => {
+  const client = getHardcoverClient();
+  if (!client) return res.status(200).json({ results: [] });
+  const sort = (req.query.sort as string) || 'popularity';
+  const dir = (req.query.dir as string) === 'asc' ? 'asc' : 'desc';
+  const limit = Math.min(Number(req.query.limit) || 36, 60);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const optStr = (k: string) =>
+    typeof req.query[k] === 'string' && req.query[k]
+      ? (req.query[k] as string)
+      : undefined;
+  const optNum = (k: string) => {
+    const v = req.query[k];
+    if (v == null || v === '') return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const tagIds =
+    typeof req.query.tagIds === 'string' && req.query.tagIds
+      ? req.query.tagIds
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n))
+      : undefined;
+  const books = await client.discover({
+    sort: sort as
+      | 'popularity'
+      | 'title'
+      | 'release_date'
+      | 'rating'
+      | 'trending',
+    dir,
+    limit,
+    offset,
+    releaseFrom: optStr('releaseFrom'),
+    releaseTo: optStr('releaseTo'),
+    pagesMin: optNum('pagesMin'),
+    pagesMax: optNum('pagesMax'),
+    ratingMin: optNum('ratingMin'),
+    ratingMax: optNum('ratingMax'),
+    usersCountMin: optNum('usersCountMin'),
+    tagIds,
+    trendingPeriod:
+      (optStr('trendingPeriod') as 'month' | 'quarter' | 'year' | 'all') ??
+      'month',
+  });
+  const mediaRows = await Media.getRelatedMedia(
+    req.user!,
+    books.map((b) => ({ tmdbId: b.id, mediaType: 'ebook' }))
+  );
+  const enriched = books.map((b) => ({
+    foreignBookId: String(b.id),
+    title: b.title,
+    slug: b.slug,
+    releaseDate: b.release_date,
+    rating: b.rating,
+    usersCount: b.users_count,
+    pageCount: b.pages,
+    overview: b.description,
+    remoteCover: b.image?.url,
+    authorTitle: b.contributions
+      .map((c) => c.author?.name)
+      .filter(Boolean)
+      .join(', '),
+    mediaInfo: mediaRows.find(
+      (m) => m.tmdbId === b.id && m.mediaType === MediaType.EBOOK
+    ),
+  }));
+  preWarmHardcover(enriched.map((b) => b.foreignBookId));
+  return res.status(200).json({ sort, dir, results: enriched });
 });
 
 ebookRoutes.get('/profiles', async (_req, res, next) => {
@@ -156,6 +270,14 @@ ebookRoutes.post('/request', async (req, res, next) => {
       });
     }
 
+    const quotas = await req.user.getQuota();
+    if (quotas.ebook.restricted) {
+      return next({
+        status: 403,
+        message: 'Ebook request quota exceeded',
+      });
+    }
+
     const autoApprove = req.user.hasPermission(
       [Permission.AUTO_APPROVE, Permission.MANAGE_REQUESTS],
       { type: 'or' }
@@ -252,31 +374,24 @@ ebookRoutes.get('/:foreignBookId', async (req, res, next) => {
     return next({ status: 400, message: 'foreignBookId must be numeric' });
   }
   try {
-    const client = getClient(server);
-    const results = await client.searchBook(`work:${req.params.foreignBookId}`);
-    const match = results[0];
-    if (!match) {
+    // Hardcover-first: see audiobook.ts for the rationale. Single ~100ms
+    // Hardcover call replaces 5-15s of chained Bookshelf lookups.
+    const hardcover = getHardcoverClient();
+    const mediaRepo = getRepository(Media);
+    const [detail, media] = await Promise.all([
+      hardcover ? hardcover.getBookFullDetail(tmdbId) : Promise.resolve(null),
+      mediaRepo.findOne({
+        where: { tmdbId, mediaType: MediaType.EBOOK },
+        relations: { requests: true },
+      }),
+    ]);
+    if (!detail) {
       return next({ status: 404, message: 'Book not found' });
     }
-    const guessedName = guessAuthorName(match.authorTitle, match.title);
-    let resolvedAuthor;
-    if (guessedName) {
-      const lookup = await client.searchAuthor(guessedName).catch(() => []);
-      resolvedAuthor = lookup[0];
-    }
-    const media = await getRepository(Media).findOne({
-      where: { tmdbId, mediaType: MediaType.EBOOK },
-      relations: { requests: true },
-    });
     return res
       .status(200)
       .json(
-        mapBookDetails(
-          match,
-          MediaType.EBOOK,
-          resolvedAuthor,
-          media ?? undefined
-        )
+        mapHardcoverToBookDetails(detail, MediaType.EBOOK, media ?? undefined)
       );
   } catch (e) {
     logger.error('Ebook details failed', {
@@ -324,38 +439,26 @@ ebookRoutes.post('/:foreignBookId/search', async (req, res, next) => {
   }
 });
 
-ebookRoutes.get('/:foreignBookId/recommendations', async (req, res, next) => {
-  const server = findEbookServer();
-  if (!server) {
-    return next({
-      status: 503,
-      message: 'No ebook Bookshelf server is configured',
-    });
-  }
-  try {
-    const client = getClient(server);
-    const baseLookup = await client.searchBook(
-      `work:${req.params.foreignBookId}`
-    );
-    const base = baseLookup[0];
-    if (!base) {
-      return res.status(200).json({ results: [] });
-    }
-    const authorName = guessAuthorName(base.authorTitle, base.title);
-    if (!authorName) {
-      return res.status(200).json({ results: [] });
-    }
-    const moreByAuthor = await client.searchBook(authorName).catch(() => []);
-    const filtered = moreByAuthor
-      .filter((b) => b.foreignBookId !== base.foreignBookId)
-      .slice(0, 20);
-    return res.status(200).json({ results: filtered });
-  } catch (e) {
-    return next({
-      status: 500,
-      message: `Ebook recommendations failed: ${e.message}`,
-    });
-  }
+ebookRoutes.get('/:foreignBookId/recommendations', async (req, res) => {
+  const id = Number(req.params.foreignBookId);
+  if (!Number.isFinite(id)) return res.status(200).json({ results: [] });
+  const hardcover = getHardcoverClient();
+  if (!hardcover) return res.status(200).json({ results: [] });
+  const books = await hardcover.getMoreByAuthor(id, 20);
+  const results = books.map((b) => ({
+    foreignBookId: String(b.id),
+    title: b.title,
+    slug: b.slug,
+    releaseDate: b.release_date,
+    rating: b.rating,
+    pageCount: b.pages,
+    remoteCover: b.image?.url,
+    authorTitle: b.contributions
+      .map((c) => c.author?.name)
+      .filter(Boolean)
+      .join(', '),
+  }));
+  return res.status(200).json({ results });
 });
 
 export default ebookRoutes;

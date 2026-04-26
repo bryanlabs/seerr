@@ -24,10 +24,22 @@ export interface BookshelfAuthor {
   metadataProfileId?: number;
   qualityProfileId?: number;
   monitored?: boolean;
-  monitorNewItems?: 'all' | 'none';
+  monitorNewItems?: 'all' | 'none' | 'new';
   rootFolderPath?: string;
   tags?: number[];
   images?: BookshelfAuthorImage[];
+  addOptions?: {
+    monitor?:
+      | 'all'
+      | 'future'
+      | 'missing'
+      | 'existing'
+      | 'firstBook'
+      | 'latestBook'
+      | 'none';
+    booksToMonitor?: string[];
+    searchForMissingBooks?: boolean;
+  };
 }
 
 export interface BookshelfBook {
@@ -240,6 +252,10 @@ class BookshelfAPI extends ServarrBase<{
             ]
           : [];
 
+      // Mirror Bookshelf UI's "Add New Book" with Monitor=Only This Book +
+      // Monitor New Books=None. Without these overrides Readarr falls back to the
+      // root folder defaults (defaultMonitorOption=all, defaultNewItemMonitorOption=all)
+      // and grabs the entire author bibliography.
       const payload: Partial<BookshelfBook> & Record<string, unknown> = {
         ...match,
         editions,
@@ -258,6 +274,12 @@ class BookshelfAPI extends ServarrBase<{
           metadataProfileId: options.metadataProfileId,
           rootFolderPath: options.rootFolderPath,
           monitored: options.monitored ?? true,
+          monitorNewItems: 'none',
+          addOptions: {
+            monitor: 'none',
+            booksToMonitor: [options.foreignBookId],
+            searchForMissingBooks: false,
+          },
         },
         addOptions: {
           searchForNewBook: options.searchNow ?? true,
