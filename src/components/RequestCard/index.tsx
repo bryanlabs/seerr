@@ -77,6 +77,13 @@ const BookRequestCard = ({
   request: NonFunctionProperties<MediaRequest>;
 }) => {
   const { ref, inView } = useInView({ triggerOnce: true });
+  const intl = useIntl();
+  const { user, hasPermission } = useUser();
+  const { addToast } = useToasts();
+  const [isRetrying, setRetrying] = useState(false);
+  const [updatingType, setUpdatingType] = useState<
+    'approve' | 'decline' | null
+  >(null);
   const isAudio = request.type === 'audiobook';
   const apiBase = isAudio ? '/api/v1/audiobook' : '/api/v1/ebook';
   const detailHref = `/${isAudio ? 'audiobooks' : 'ebooks'}/${request.media.tmdbId}`;
@@ -91,34 +98,80 @@ const BookRequestCard = ({
   const author = book ? guessAuthorRC(book) : '';
 
   const status = requestData?.status ?? request.status;
+  const mediaStatus = requestData?.media?.status ?? request.media.status;
   let statusBadge: React.ReactNode;
   if (status === MediaRequestStatus.DECLINED) {
     statusBadge = <Badge badgeType="danger">Declined</Badge>;
   } else if (status === MediaRequestStatus.FAILED) {
     statusBadge = <Badge badgeType="danger">Failed</Badge>;
   } else if (status === MediaRequestStatus.APPROVED) {
-    statusBadge = <Badge badgeType="success">Approved</Badge>;
+    statusBadge =
+      mediaStatus === MediaStatus.AVAILABLE ? (
+        <Badge badgeType="success">Available</Badge>
+      ) : mediaStatus === MediaStatus.PROCESSING ? (
+        <Badge>Processing</Badge>
+      ) : (
+        <Badge badgeType="success">Approved</Badge>
+      );
   } else {
     statusBadge = <Badge>Pending</Badge>;
   }
 
+  const modifyRequest = async (type: 'approve' | 'decline') => {
+    setUpdatingType(type);
+    try {
+      await axios.post(`/api/v1/request/${request.id}/${type}`);
+      mutate('/api/v1/request/count');
+      mutate(`/api/v1/request/${request.id}`);
+    } catch {
+      addToast(intl.formatMessage(messages.failedmodify), {
+        autoDismiss: true,
+        appearance: 'error',
+      });
+    } finally {
+      setUpdatingType(null);
+    }
+  };
+
+  const deleteRequest = async () => {
+    await axios.delete(`/api/v1/request/${request.id}`);
+    mutate('/api/v1/request?filter=all&take=10&sort=modified&skip=0');
+    mutate('/api/v1/request/count');
+  };
+
+  const retryRequest = async () => {
+    setRetrying(true);
+    try {
+      await axios.post(`/api/v1/request/${request.id}/retry`);
+      mutate(`/api/v1/request/${request.id}`);
+    } catch {
+      addToast(intl.formatMessage(messages.failedretry), {
+        autoDismiss: true,
+        appearance: 'error',
+      });
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   return (
-    <Link
-      href={detailHref}
+    <div
       ref={ref}
       className="relative flex w-72 flex-col gap-3 rounded-xl bg-gray-700 p-4 shadow ring-1 ring-gray-700 transition hover:ring-gray-500 sm:w-96"
     >
       <div className="flex gap-3">
-        {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={cover}
-            alt=""
-            className="h-32 w-20 flex-shrink-0 rounded-md object-cover shadow"
-          />
-        ) : (
-          <div className="h-32 w-20 flex-shrink-0 rounded-md bg-gray-800" />
-        )}
+        <Link href={detailHref} className="flex-shrink-0">
+          {cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={cover}
+              alt=""
+              className="h-32 w-20 rounded-md object-cover shadow"
+            />
+          ) : (
+            <div className="h-32 w-20 rounded-md bg-gray-800" />
+          )}
+        </Link>
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="text-xs font-medium uppercase tracking-wide text-gray-400">
             {isAudio ? 'Audiobook' : 'Ebook'}
@@ -128,16 +181,85 @@ const BookRequestCard = ({
               </span>
             )}
           </div>
-          <div className="mt-1 truncate text-sm font-bold text-white">
+          <Link
+            href={detailHref}
+            className="mt-1 truncate text-sm font-bold text-white hover:underline"
+          >
             {book?.title ?? `Book #${request.media.tmdbId}`}
-          </div>
+          </Link>
           {author && (
             <div className="truncate text-xs text-gray-400">{author}</div>
           )}
-          <div className="mt-auto pt-2">{statusBadge}</div>
+          <div className="mt-auto flex flex-wrap items-center gap-2 pt-2">
+            {statusBadge}
+            {requestData?.media?.serviceUrl &&
+              hasPermission(Permission.MANAGE_REQUESTS) && (
+                <Button
+                  buttonType="default"
+                  buttonSize="sm"
+                  onClick={() => window.open(requestData.media.serviceUrl)}
+                >
+                  Open
+                </Button>
+              )}
+          </div>
         </div>
       </div>
-    </Link>
+      <div className="flex flex-wrap gap-2">
+        {status === MediaRequestStatus.FAILED &&
+          hasPermission(Permission.MANAGE_REQUESTS) && (
+            <Button
+              buttonType="primary"
+              buttonSize="sm"
+              disabled={isRetrying}
+              onClick={() => retryRequest()}
+            >
+              <ArrowPathIcon
+                className={isRetrying ? 'animate-spin' : ''}
+                style={{ marginRight: 0, animationDirection: 'reverse' }}
+              />
+              <span className="ml-1.5">
+                {intl.formatMessage(globalMessages.retry)}
+              </span>
+            </Button>
+          )}
+        {status === MediaRequestStatus.PENDING &&
+          hasPermission(Permission.MANAGE_REQUESTS) && (
+            <>
+              <Button
+                buttonType="success"
+                buttonSize="sm"
+                onClick={() => modifyRequest('approve')}
+                disabled={updatingType !== null}
+              >
+                {updatingType === 'approve' ? <Spinner /> : <CheckIcon />}
+                <span>{intl.formatMessage(globalMessages.approve)}</span>
+              </Button>
+              <Button
+                buttonType="danger"
+                buttonSize="sm"
+                onClick={() => modifyRequest('decline')}
+                disabled={updatingType !== null}
+              >
+                {updatingType === 'decline' ? <Spinner /> : <XMarkIcon />}
+                <span>{intl.formatMessage(globalMessages.decline)}</span>
+              </Button>
+            </>
+          )}
+        {status === MediaRequestStatus.PENDING &&
+          !hasPermission(Permission.MANAGE_REQUESTS) &&
+          requestData?.requestedBy.id === user?.id && (
+            <Button
+              buttonType="danger"
+              buttonSize="sm"
+              onClick={() => deleteRequest()}
+            >
+              <XMarkIcon />
+              <span>{intl.formatMessage(globalMessages.cancel)}</span>
+            </Button>
+          )}
+      </div>
+    </div>
   );
 };
 

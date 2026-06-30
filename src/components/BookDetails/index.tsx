@@ -7,6 +7,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import Tag from '@app/components/Common/Tag';
 import IssueModal from '@app/components/IssueModal';
 import StatusBadge from '@app/components/StatusBadge';
+import BookTitleCard from '@app/components/TitleCard/BookTitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import {
@@ -22,7 +23,6 @@ import {
 import { MediaRequestStatus, MediaStatus } from '@server/constants/media';
 import type { BookDetails as BookDetailsType } from '@server/models/Book';
 import axios from 'axios';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
 import { useToasts } from 'react-toast-notifications';
@@ -32,9 +32,30 @@ interface BookshelfRecommendationItem {
   title: string;
   foreignBookId: string;
   releaseDate?: string;
+  rating?: number | null;
+  overview?: string;
   remoteCover?: string;
   images?: { coverType: string; url: string; remoteUrl?: string }[];
   authorTitle?: string;
+  mediaInfo?: { status: MediaStatus };
+}
+
+interface BookRecommendationSection {
+  key: string;
+  title: string;
+  results: BookshelfRecommendationItem[];
+}
+
+interface BookQueueItem {
+  bookId?: number;
+  title: string;
+  status?: string;
+  trackedDownloadStatus?: string;
+  trackedDownloadState?: string;
+  timeleft?: string;
+  estimatedCompletionTime?: string;
+  indexer?: string;
+  downloadClient?: string;
 }
 
 interface BookDetailsProps {
@@ -58,8 +79,16 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
     id ? `${apiBase}/${id}` : null
   );
 
-  const { data: recs } = useSWR<{ results: BookshelfRecommendationItem[] }>(
-    id ? `${apiBase}/${id}/recommendations` : null
+  const { data: recs } = useSWR<{
+    results: BookshelfRecommendationItem[];
+    sections?: BookRecommendationSection[];
+  }>(id ? `${apiBase}/${id}/recommendations` : null);
+  const { data: queueData } = useSWR<{ queue: BookQueueItem[] }>(
+    data?.mediaInfo ? `${apiBase}/queue` : null,
+    {
+      refreshInterval:
+        data?.mediaInfo?.status === MediaStatus.PROCESSING ? 15000 : 0,
+    }
   );
 
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -152,6 +181,15 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
 
   const ratingValue = data.ratings?.value;
   const ratingVotes = data.ratings?.votes;
+  const queueItem = queueData?.queue.find(
+    (item) => item.bookId === data.bookshelfId
+  );
+  const formatAudioDuration = (seconds?: number) => {
+    if (!seconds || seconds <= 0) return undefined;
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.round((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  };
 
   return (
     <div className="media-page">
@@ -217,6 +255,13 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
             <span className="media-attributes mt-2 flex flex-wrap gap-1">
               {data.genres.slice(0, 6).map((g) => (
                 <Tag key={g}>{g}</Tag>
+              ))}
+            </span>
+          )}
+          {data.moods && data.moods.length > 0 && (
+            <span className="media-attributes mt-2 flex flex-wrap gap-1">
+              {data.moods.slice(0, 6).map((g) => (
+                <Tag key={`mood-${g}`}>{g}</Tag>
               ))}
             </span>
           )}
@@ -344,6 +389,21 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
           </Button>
         </div>
       )}
+      {queueItem && (
+        <div className="mt-4 rounded-md bg-gray-800 p-3 ring-1 ring-gray-700">
+          <div className="text-sm font-semibold text-gray-200">
+            Bookshelf Queue
+          </div>
+          <div className="mt-1 text-sm text-gray-400">
+            {queueItem.status ?? queueItem.trackedDownloadState ?? 'Queued'}
+            {queueItem.trackedDownloadStatus
+              ? ` · ${queueItem.trackedDownloadStatus}`
+              : ''}
+            {queueItem.timeleft ? ` · ${queueItem.timeleft} left` : ''}
+            {queueItem.indexer ? ` · ${queueItem.indexer}` : ''}
+          </div>
+        </div>
+      )}
       <div className="media-overview">
         <div className="media-overview-left">
           <div className="text-2xl font-bold text-white">Overview</div>
@@ -364,6 +424,16 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
                     {e.format && <Badge>{e.format}</Badge>}
                     {e.language && (
                       <span className="text-gray-500">{e.language}</span>
+                    )}
+                    {formatAudioDuration(e.audioSeconds) && (
+                      <span className="text-gray-500">
+                        {formatAudioDuration(e.audioSeconds)}
+                      </span>
+                    )}
+                    {e.releaseDate && (
+                      <span className="text-gray-500">
+                        {e.releaseDate.slice(0, 4)}
+                      </span>
                     )}
                     {e.isbn13 && (
                       <span className="text-gray-500">ISBN {e.isbn13}</span>
@@ -407,6 +477,14 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
                 <span className="media-fact-value">{data.pageCount}</span>
               </div>
             )}
+            {data.tags && data.tags.length > 0 && (
+              <div className="media-fact">
+                <span>Tags</span>
+                <span className="media-fact-value">
+                  {data.tags.slice(0, 5).join(', ')}
+                </span>
+              </div>
+            )}
             {data.foreignBookId && (
               <div className="media-fact">
                 <span>Hardcover ID</span>
@@ -446,53 +524,53 @@ const BookDetails = ({ mediaType }: BookDetailsProps) => {
         </div>
       </div>
 
-      {recs && recs.results.length > 0 && (
-        <div className="mt-10">
-          <div className="slider-header">
-            <div className="slider-title">
-              <span className="text-2xl font-bold text-white">
-                More by {data.authorName ?? 'this author'}
-              </span>
+      {(
+        recs?.sections ?? [
+          {
+            key: 'author',
+            title: `More by ${data.authorName ?? 'this author'}`,
+            results: recs?.results ?? [],
+          },
+        ]
+      )
+        .filter((section) => section.results.length > 0)
+        .map((section) => (
+          <div className="mt-10" key={section.key}>
+            <div className="slider-header">
+              <div className="slider-title">
+                <span className="text-2xl font-bold text-white">
+                  {section.key === 'author'
+                    ? `More by ${data.authorName ?? 'this author'}`
+                    : section.title}
+                </span>
+              </div>
             </div>
+            <ul className="cards-vertical">
+              {section.results.slice(0, 16).map((b) => {
+                const recCover =
+                  b.remoteCover ??
+                  b.images?.find((i) => i.coverType === 'cover')?.remoteUrl ??
+                  b.images?.find((i) => i.coverType === 'cover')?.url;
+                return (
+                  <li key={`${section.key}-${b.foreignBookId}`}>
+                    <BookTitleCard
+                      foreignBookId={b.foreignBookId}
+                      mediaType={mediaType}
+                      image={recCover}
+                      title={b.title}
+                      author={b.authorTitle}
+                      year={b.releaseDate?.slice(0, 4)}
+                      rating={b.rating}
+                      summary={b.overview}
+                      status={b.mediaInfo?.status}
+                      canExpand
+                    />
+                  </li>
+                );
+              })}
+            </ul>
           </div>
-          <ul className="grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
-            {recs.results.slice(0, 16).map((b) => {
-              const recCover =
-                b.remoteCover ??
-                b.images?.find((i) => i.coverType === 'cover')?.remoteUrl ??
-                b.images?.find((i) => i.coverType === 'cover')?.url;
-              const href = `/${mediaType === 'audiobook' ? 'audiobooks' : 'ebooks'}/${b.foreignBookId}`;
-              return (
-                <li key={b.foreignBookId}>
-                  <Link
-                    href={href}
-                    className="block transition hover:scale-105"
-                  >
-                    {recCover ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={recCover}
-                        alt={b.title}
-                        className="aspect-[2/3] w-full rounded-md object-cover shadow-md"
-                      />
-                    ) : (
-                      <div className="aspect-[2/3] w-full rounded-md bg-gray-700" />
-                    )}
-                    <div className="mt-1 truncate text-xs font-semibold text-white">
-                      {b.title}
-                    </div>
-                    {b.releaseDate?.slice(0, 4) && (
-                      <div className="text-xs text-gray-500">
-                        {b.releaseDate.slice(0, 4)}
-                      </div>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+        ))}
 
       {showIssueModal && data.mediaInfo && (
         <IssueModal

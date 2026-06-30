@@ -690,7 +690,7 @@ requestRoutes.post<{
     try {
       const request = await requestRepository.findOneOrFail({
         where: { id: Number(req.params.requestId) },
-        relations: { requestedBy: true, modifiedBy: true },
+        relations: { media: true, requestedBy: true, modifiedBy: true },
       });
 
       // this also triggers updating the parent media's status & sending to *arr
@@ -721,7 +721,7 @@ requestRoutes.post<{
     try {
       const request = await requestRepository.findOneOrFail({
         where: { id: Number(req.params.requestId) },
-        relations: { requestedBy: true, modifiedBy: true },
+        relations: { media: true, requestedBy: true, modifiedBy: true },
       });
 
       let newStatus: MediaRequestStatus;
@@ -736,6 +736,8 @@ requestRoutes.post<{
         case 'decline':
           newStatus = MediaRequestStatus.DECLINED;
           break;
+        default:
+          return next({ status: 400, message: 'Invalid request status.' });
       }
 
       request.status = newStatus;

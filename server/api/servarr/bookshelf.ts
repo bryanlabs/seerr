@@ -96,6 +96,7 @@ export interface BookshelfBook {
 
 export interface AddBookOptions {
   foreignBookId: string;
+  canonicalTitle?: string;
   /**
    * Either pass an explicit foreignAuthorId or an authorName for the route to
    * resolve via /author/lookup. Bookshelf's /book/lookup response does not
@@ -218,6 +219,13 @@ class BookshelfAPI extends ServarrBase<{
         );
       }
 
+      const canonicalTitle = options.canonicalTitle?.trim();
+      const bookTitle = canonicalTitle || match.title;
+      const authorTitle =
+        canonicalTitle && match.authorTitle
+          ? match.authorTitle.replace(match.title, canonicalTitle)
+          : match.authorTitle;
+
       let foreignAuthorId = options.foreignAuthorId;
       let resolvedAuthor: BookshelfAuthor | undefined;
       if (!foreignAuthorId) {
@@ -241,12 +249,19 @@ class BookshelfAPI extends ServarrBase<{
       // an editions array from the lookup's foreignEditionId so the mapper has
       // something to walk.
       const editions = match.editions?.length
-        ? match.editions
+        ? match.editions.map((edition) => ({
+            ...edition,
+            title:
+              canonicalTitle &&
+              (!edition.title || edition.title === match.title)
+                ? canonicalTitle
+                : edition.title,
+          }))
         : match.foreignEditionId
           ? [
               {
                 foreignEditionId: match.foreignEditionId,
-                title: match.title,
+                title: bookTitle,
                 monitored: true,
               },
             ]
@@ -258,6 +273,8 @@ class BookshelfAPI extends ServarrBase<{
       // and grabs the entire author bibliography.
       const payload: Partial<BookshelfBook> & Record<string, unknown> = {
         ...match,
+        title: bookTitle,
+        authorTitle,
         editions,
         qualityProfileId: options.profileId,
         metadataProfileId: options.metadataProfileId,

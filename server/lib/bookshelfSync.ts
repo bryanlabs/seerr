@@ -1,7 +1,12 @@
 import BookshelfAPI from '@server/api/servarr/bookshelf';
-import { MediaStatus, MediaType } from '@server/constants/media';
+import {
+  MediaRequestStatus,
+  MediaStatus,
+  MediaType,
+} from '@server/constants/media';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
+import { MediaRequest } from '@server/entity/MediaRequest';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { In } from 'typeorm';
@@ -79,6 +84,7 @@ class BookshelfSync {
       }
 
       let availableCount = 0;
+      const requestRepo = getRepository(MediaRequest);
       for (const media of inFlight) {
         if (media.serviceId == null || media.externalServiceId == null) {
           continue;
@@ -94,6 +100,17 @@ class BookshelfSync {
             media.mediaAddedAt = new Date();
           }
           await mediaRepo.save(media);
+          const approvedRequests = await requestRepo.find({
+            where: {
+              media: { id: media.id },
+              status: MediaRequestStatus.APPROVED,
+            },
+            relations: { media: true, requestedBy: true },
+          });
+          for (const request of approvedRequests) {
+            request.status = MediaRequestStatus.COMPLETED;
+            await requestRepo.save(request);
+          }
           availableCount += 1;
           logger.info(`Marked media ${media.id} as AVAILABLE from Bookshelf`, {
             label: 'BookshelfSync',

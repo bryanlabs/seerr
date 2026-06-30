@@ -873,6 +873,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       // by foreignBookId from Bookshelf.
       const BookshelfAPI = (await import('@server/api/servarr/bookshelf'))
         .default;
+      const { getHardcoverClient } = await import('@server/api/hardcover');
       const { guessAuthorCandidates } = await import('@server/models/Book');
       const client = new BookshelfAPI({
         apiKey: server.apiKey,
@@ -917,17 +918,27 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         return;
       }
 
+      const hardcover = getHardcoverClient();
+      const canonicalTitle = hardcover
+        ? (
+            await hardcover.getBookFullDetail(media.tmdbId).catch(() => null)
+          )?.title?.trim()
+        : undefined;
+
       try {
         const book = await client.addBook({
           foreignBookId: String(media.tmdbId),
+          canonicalTitle,
           foreignAuthorId: resolvedForeignAuthorId,
           authorName: resolvedAuthorName,
           // Honor the per-request quality profile override stored on the
           // MediaRequest (set via the modal's Quality Profile dropdown).
           profileId: entity.profileId ?? server.activeProfileId,
-          metadataProfileId: server.activeMetadataProfileId,
-          rootFolderPath: server.activeDirectory,
+          metadataProfileId:
+            entity.languageProfileId ?? server.activeMetadataProfileId,
+          rootFolderPath: entity.rootFolder ?? server.activeDirectory,
           monitored: true,
+          tags: entity.tags ?? server.tags,
           searchNow: true,
         });
 

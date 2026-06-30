@@ -15,6 +15,40 @@ export interface HardcoverBook {
   contributions: { author: { name: string } | null }[];
 }
 
+interface HardcoverSearchDocument {
+  id: string | number;
+  title?: string | null;
+  slug?: string | null;
+  release_date?: string | null;
+  users_count?: number | null;
+  rating?: number | null;
+  pages?: number | null;
+  description?: string | null;
+  image?: { url?: string | null } | null;
+  contributions?:
+    | { author?: { id?: number | null; name?: string | null } | null }[]
+    | null;
+  author_names?: string[] | null;
+  alternative_titles?: string[] | null;
+  series_names?: string[] | null;
+  has_audiobook?: boolean | null;
+  has_ebook?: boolean | null;
+}
+
+interface HardcoverSearchHit {
+  document?: HardcoverSearchDocument | null;
+}
+
+interface HardcoverSearchOutput {
+  ids?: number[];
+  error?: string | null;
+  results?: {
+    hits?: HardcoverSearchHit[];
+  } | null;
+}
+
+type BookSearchMediaType = 'audiobook' | 'ebook';
+
 type SortField =
   | 'popularity'
   | 'title'
@@ -50,6 +84,219 @@ const ORDER_BY: Record<SortField, string> = {
   release_date: 'release_date',
   rating: 'rating',
   trending: 'users_count', // unused; trending is dispatched to a different code path
+};
+
+const normalizeSearchText = (value: string): string =>
+  value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+const compactSearchText = (value: string): string =>
+  normalizeSearchText(value).replace(/\s+/g, '');
+
+const buildBookSearchQueries = (term: string): string[] => {
+  const cleaned = normalizeSearchText(term);
+  if (!cleaned) return [];
+
+  const out = [cleaned];
+  const compact = compactSearchText(term);
+  const isSingleToken = cleaned === compact;
+
+  if (isSingleToken && compact.length >= 7 && compact.length <= 24) {
+    for (let i = 3; i <= compact.length - 3; i += 1) {
+      out.push(`${compact.slice(0, i)} ${compact.slice(i)}`);
+    }
+  }
+
+  return [...new Set(out)];
+};
+
+const searchDocumentToBook = (
+  doc: HardcoverSearchDocument
+): HardcoverBook | undefined => {
+  const id = Number(doc.id);
+  if (!Number.isFinite(id) || !doc.title) return undefined;
+
+  const authorNames = [
+    ...(doc.contributions ?? [])
+      .map((c) => c.author?.name)
+      .filter((name): name is string => !!name),
+    ...(doc.author_names ?? []),
+  ];
+  const seenAuthors = new Set<string>();
+  const contributions = authorNames
+    .filter((name) => {
+      const key = name.toLowerCase();
+      if (seenAuthors.has(key)) return false;
+      seenAuthors.add(key);
+      return true;
+    })
+    .map((name) => ({ author: { name } }));
+
+  return {
+    id,
+    title: doc.title,
+    slug: doc.slug ?? String(id),
+    release_date: doc.release_date ?? null,
+    users_count: doc.users_count ?? 0,
+    rating: doc.rating ?? null,
+    pages: doc.pages ?? null,
+    description: doc.description ?? null,
+    image: doc.image?.url ? { url: doc.image.url } : null,
+    contributions,
+  };
+};
+
+const matchingAuthorIds = (
+  docs: HardcoverSearchDocument[],
+  term: string
+): number[] => {
+  const query = normalizeSearchText(term);
+  const compactQuery = compactSearchText(term);
+  const counts = new Map<number, number>();
+
+  for (const doc of docs) {
+    for (const contribution of doc.contributions ?? []) {
+      const author = contribution.author;
+      const id = Number(author?.id);
+      if (!Number.isFinite(id) || !author?.name) continue;
+
+      const normalized = normalizeSearchText(author.name);
+      const compact = compactSearchText(author.name);
+      if (
+        normalized === query ||
+        compact === compactQuery ||
+        normalized.includes(query) ||
+        compact.includes(compactQuery)
+      ) {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+    }
+  }
+
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => id)
+    .slice(0, 3);
+};
+
+const hardcoverBookToSearchDocument = (
+  book: HardcoverBook
+): HardcoverSearchDocument => ({
+  id: book.id,
+  title: book.title,
+  slug: book.slug,
+  release_date: book.release_date,
+  users_count: book.users_count,
+  rating: book.rating,
+  pages: book.pages,
+  description: book.description,
+  image: book.image,
+  contributions: book.contributions.map((c) => ({
+    author: c.author ? { name: c.author.name } : null,
+  })),
+  author_names: book.contributions
+    .map((c) => c.author?.name)
+    .filter((name): name is string => !!name),
+});
+
+const scoreSearchDocument = (
+  doc: HardcoverSearchDocument,
+  term: string,
+  mediaType?: BookSearchMediaType
+): number => {
+  const query = normalizeSearchText(term);
+  const compactQuery = compactSearchText(term);
+  const title = normalizeSearchText(doc.title ?? '');
+  const compactTitle = compactSearchText(doc.title ?? '');
+  const slug = normalizeSearchText((doc.slug ?? '').replace(/-/g, ' '));
+  const authorNames = [
+    ...(doc.author_names ?? []),
+    ...(doc.contributions ?? [])
+      .map((c) => c.author?.name)
+      .filter((name): name is string => !!name),
+  ].filter((name, index, names) => {
+    const key = normalizeSearchText(name);
+    return names.findIndex((n) => normalizeSearchText(n) === key) === index;
+  });
+  const alternatives = doc.alternative_titles ?? [];
+  const seriesNames = doc.series_names ?? [];
+  const popularity = Math.min(doc.users_count ?? 0, 10000);
+  let authorMatched = false;
+
+  let score = Math.log10(popularity + 1) * 120;
+
+  for (const author of authorNames) {
+    const normalized = normalizeSearchText(author);
+    const compact = compactSearchText(author);
+    if (normalized === query || compact === compactQuery) {
+      score += 4200;
+      authorMatched = true;
+    } else if (normalized.startsWith(query)) {
+      score += 2600;
+      authorMatched = true;
+    } else if (normalized.includes(query) || compact.includes(compactQuery)) {
+      score += 3600;
+      authorMatched = true;
+    }
+  }
+
+  if (title === query) score += 5000;
+  else if (!authorMatched && title.startsWith(query)) score += 2600;
+  else if (!authorMatched && title.includes(query)) score += 1600;
+
+  if (compactTitle === compactQuery) score += 5200;
+  else if (!authorMatched && compactTitle.startsWith(compactQuery))
+    score += 1800;
+  else if (!authorMatched && compactTitle.includes(compactQuery)) score += 900;
+
+  if (slug === query) score += 1000;
+  else if (!authorMatched && slug.includes(query)) score += 500;
+
+  for (const alt of alternatives) {
+    const normalized = normalizeSearchText(alt);
+    const compact = compactSearchText(alt);
+    if (normalized === query || compact === compactQuery) score += 1800;
+    else if (
+      !authorMatched &&
+      (normalized.includes(query) || compact.includes(compactQuery))
+    ) {
+      score += 600;
+    }
+  }
+
+  for (const series of seriesNames) {
+    const normalized = normalizeSearchText(series);
+    if (normalized === query) score += 800;
+    else if (normalized.includes(query)) score += 400;
+  }
+
+  if (mediaType === 'audiobook' && doc.has_audiobook) score += 250;
+  if (mediaType === 'ebook' && doc.has_ebook) score += 250;
+
+  const queryWantsSummary =
+    query.includes('summary') ||
+    query.includes('study guide') ||
+    query.includes('sampler') ||
+    query.includes('book guide');
+  if (!queryWantsSummary) {
+    const noisyTitle = title;
+    if (
+      noisyTitle.includes('summary') ||
+      noisyTitle.includes('study guide') ||
+      noisyTitle.includes('sampler') ||
+      noisyTitle.includes('book guide')
+    ) {
+      score -= 1400;
+    }
+  }
+
+  return score;
 };
 
 class HardcoverAPI {
@@ -453,6 +700,158 @@ class HardcoverAPI {
       });
       return [];
     }
+  }
+
+  private async runBookSearch(
+    term: string,
+    perPage: number
+  ): Promise<HardcoverSearchDocument[]> {
+    const query = `
+      query Search($q: String!, $perPage: Int!) {
+        search(query: $q, per_page: $perPage, page: 1) {
+          ids
+          error
+          results
+        }
+      }
+    `;
+    const r = await axios.post<{ data?: { search?: HardcoverSearchOutput } }>(
+      this.endpoint,
+      { query, variables: { q: term, perPage } },
+      {
+        headers: {
+          Authorization: this.token,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      }
+    );
+    const search = r.data?.data?.search;
+    if (search?.error) {
+      logger.warn('Hardcover search returned an error', {
+        label: 'Hardcover',
+        term,
+        error: search.error,
+      });
+      return [];
+    }
+    return (search?.results?.hits ?? [])
+      .map((h) => h.document)
+      .filter((d): d is HardcoverSearchDocument => !!d);
+  }
+
+  private async getPopularBooksByAuthorIds(
+    authorIds: number[],
+    limit: number
+  ): Promise<HardcoverBook[]> {
+    if (!authorIds.length) return [];
+
+    const query = `
+      query AuthorBooks($authorIds: [Int!]!, $limit: Int!) {
+        books(
+          where: {
+            contributions: { author: { id: { _in: $authorIds } } }
+            users_count: { _gt: 0 }
+          }
+          order_by: { users_count: desc }
+          limit: $limit
+        ) {
+          id
+          title
+          slug
+          release_date
+          users_count
+          rating
+          pages
+          description
+          image { url }
+          contributions(limit: 3) { author { name } }
+        }
+      }
+    `;
+
+    try {
+      const r = await axios.post<{ data?: { books?: HardcoverBook[] } }>(
+        this.endpoint,
+        { query, variables: { authorIds, limit } },
+        {
+          headers: {
+            Authorization: this.token,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+      return r.data?.data?.books ?? [];
+    } catch (e) {
+      logger.warn('Hardcover author enrichment failed', {
+        label: 'Hardcover',
+        authorIds,
+        message: (e as Error).message,
+      });
+      return [];
+    }
+  }
+
+  public async searchBooks(
+    term: string,
+    options: { limit?: number; mediaType?: BookSearchMediaType } = {}
+  ): Promise<HardcoverBook[]> {
+    const cleaned = normalizeSearchText(term);
+    if (!cleaned) return [];
+
+    const limit = Math.min(Math.max(options.limit ?? 30, 1), 60);
+    const cache = cacheManager.getCache('hardcover').data;
+    const cacheKey = `search:v6:${options.mediaType ?? 'book'}:${cleaned}:${limit}`;
+    const cached = cache.get<HardcoverBook[]>(cacheKey);
+    if (cached) return cached;
+
+    const queries = buildBookSearchQueries(term);
+    const rawDocs: HardcoverSearchDocument[] = [];
+    const seenDocIds = new Set<number>();
+
+    for (const query of queries) {
+      try {
+        const docs = await this.runBookSearch(query, limit);
+        for (const doc of docs) {
+          const id = Number(doc.id);
+          if (!Number.isFinite(id) || seenDocIds.has(id)) continue;
+          seenDocIds.add(id);
+          rawDocs.push(doc);
+        }
+      } catch (e) {
+        logger.error('Hardcover search failed', {
+          label: 'Hardcover',
+          term: query,
+          message: (e as Error).message,
+        });
+      }
+    }
+
+    const authorIds = matchingAuthorIds(rawDocs, term);
+    const authorBooks = await this.getPopularBooksByAuthorIds(authorIds, limit);
+    for (const book of authorBooks) {
+      const id = Number(book.id);
+      if (!Number.isFinite(id) || seenDocIds.has(id)) continue;
+      seenDocIds.add(id);
+      rawDocs.push(hardcoverBookToSearchDocument(book));
+    }
+
+    const rankedDocs = rawDocs
+      .map((doc) => ({
+        doc,
+        score: scoreSearchDocument(doc, cleaned, options.mediaType),
+      }))
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.doc);
+
+    const books = rankedDocs
+      .map(searchDocumentToBook)
+      .filter((b): b is HardcoverBook => !!b)
+      .slice(0, limit);
+
+    cache.set(cacheKey, books, 300);
+    return books;
   }
 
   public async getWantToRead(

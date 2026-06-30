@@ -12,7 +12,10 @@ import { Permission } from '@server/lib/permissions';
 import type { BookshelfSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { mapHardcoverToBookDetails } from '@server/models/Book';
+import {
+  mapHardcoverToBookDetails,
+  mapHardcoverToBookSearchResult,
+} from '@server/models/Book';
 import { Router } from 'express';
 
 /**
@@ -48,16 +51,22 @@ audiobookRoutes.get('/search', async (req, res, next) => {
     return next({ status: 400, message: 'Missing q parameter' });
   }
 
-  const server = findAudiobookServer();
-  if (!server) {
-    return next({
-      status: 503,
-      message: 'No audiobook Bookshelf server is configured',
-    });
-  }
-
   try {
-    const results = await getClient(server).searchBook(term);
+    const hardcover = getHardcoverClient();
+    const results = hardcover
+      ? (
+          await hardcover.searchBooks(term, {
+            mediaType: 'audiobook',
+            limit: 30,
+          })
+        ).map(mapHardcoverToBookSearchResult)
+      : await (async () => {
+          const server = findAudiobookServer();
+          if (!server) {
+            throw new Error('No audiobook Bookshelf server is configured');
+          }
+          return getClient(server).searchBook(term);
+        })();
     const mediaRows = await Media.getRelatedMedia(
       req.user!,
       results.map((r) => ({
@@ -194,15 +203,50 @@ audiobookRoutes.get('/profiles', async (_req, res, next) => {
   }
   try {
     const client = getClient(server);
-    const [profiles, metadataProfiles] = await Promise.all([
+    const [profiles, metadataProfiles, rootFolders, tags] = await Promise.all([
       client.getProfiles(),
       client.getMetadataProfiles(),
+      client.getRootFolders(),
+      client.getTags(),
     ]);
+    const servers = await Promise.all(
+      getSettings()
+        .bookshelf.filter((s) => s.mediaType === 'audiobook')
+        .map(async (s) => {
+          const sClient = getClient(s);
+          const [sProfiles, sMetadataProfiles, sRootFolders, sTags] =
+            await Promise.all([
+              sClient.getProfiles().catch(() => []),
+              sClient.getMetadataProfiles().catch(() => []),
+              sClient.getRootFolders().catch(() => []),
+              sClient.getTags().catch(() => []),
+            ]);
+          return {
+            id: s.id,
+            name: s.name,
+            isDefault: s.isDefault,
+            activeProfileId: s.activeProfileId,
+            activeMetadataProfileId: s.activeMetadataProfileId,
+            activeDirectory: s.activeDirectory,
+            activeTags: s.tags ?? [],
+            profiles: sProfiles,
+            metadataProfiles: sMetadataProfiles,
+            rootFolders: sRootFolders,
+            tags: sTags,
+          };
+        })
+    );
     return res.status(200).json({
       profiles,
       metadataProfiles,
+      rootFolders,
+      tags,
+      servers,
+      defaultServerId: server.id,
       defaultProfileId: server.activeProfileId,
       defaultMetadataProfileId: server.activeMetadataProfileId,
+      defaultRootFolder: server.activeDirectory,
+      defaultTags: server.tags ?? [],
     });
   } catch (e) {
     return next({
@@ -213,13 +257,25 @@ audiobookRoutes.get('/profiles', async (_req, res, next) => {
 });
 
 audiobookRoutes.post('/request', async (req, res, next) => {
-  const { foreignBookId, foreignAuthorId, authorName, profileId } =
-    req.body as {
-      foreignBookId?: string;
-      foreignAuthorId?: string;
-      authorName?: string;
-      profileId?: number;
-    };
+  const {
+    foreignBookId,
+    foreignAuthorId,
+    authorName,
+    profileId,
+    metadataProfileId,
+    serverId,
+    rootFolder,
+    tags,
+  } = req.body as {
+    foreignBookId?: string;
+    foreignAuthorId?: string;
+    authorName?: string;
+    profileId?: number;
+    metadataProfileId?: number;
+    serverId?: number;
+    rootFolder?: string;
+    tags?: number[];
+  };
 
   if (!foreignBookId) {
     return next({ status: 400, message: 'foreignBookId is required' });
@@ -234,7 +290,10 @@ audiobookRoutes.post('/request', async (req, res, next) => {
     return next({ status: 401, message: 'Authentication required' });
   }
 
-  const server = findAudiobookServer();
+  const server =
+    getSettings().bookshelf.find(
+      (s) => s.mediaType === 'audiobook' && s.id === serverId
+    ) ?? findAudiobookServer();
   if (!server) {
     return next({
       status: 503,
@@ -307,8 +366,9 @@ audiobookRoutes.post('/request', async (req, res, next) => {
       is4k: false,
       serverId: server.id,
       profileId: profileId ?? server.activeProfileId,
-      rootFolder: server.activeDirectory,
-      tags: [],
+      languageProfileId: metadataProfileId ?? server.activeMetadataProfileId,
+      rootFolder: rootFolder ?? server.activeDirectory,
+      tags: tags ?? [],
       isAutoRequest: false,
     });
 
@@ -351,6 +411,26 @@ audiobookRoutes.get('/queue', async (req, res, next) => {
 });
 
 audiobookRoutes.get('/info/:foreignBookId', async (req, res, next) => {
+  const tmdbId = Number(req.params.foreignBookId);
+  const hardcover = Number.isFinite(tmdbId) ? getHardcoverClient() : null;
+  if (hardcover) {
+    const detail = await hardcover.getBookFullDetail(tmdbId);
+    if (detail) {
+      return res.status(200).json({
+        foreignBookId: String(detail.id),
+        title: detail.title,
+        slug: detail.slug ?? undefined,
+        releaseDate: detail.release_date ?? undefined,
+        rating: detail.rating ?? undefined,
+        pageCount: detail.pages ?? undefined,
+        remoteCover: detail.image?.url,
+        authorTitle: detail.contributions
+          .map((c) => c.author?.name)
+          .filter(Boolean)
+          .join(', '),
+      });
+    }
+  }
   const server = findAudiobookServer();
   if (!server) {
     return next({
@@ -466,21 +546,47 @@ audiobookRoutes.get('/:foreignBookId/recommendations', async (req, res) => {
   if (!Number.isFinite(id)) return res.status(200).json({ results: [] });
   const hardcover = getHardcoverClient();
   if (!hardcover) return res.status(200).json({ results: [] });
-  const books = await hardcover.getMoreByAuthor(id, 20);
-  const results = books.map((b) => ({
+  const [moreByAuthor, trending] = await Promise.all([
+    hardcover.getMoreByAuthor(id, 20),
+    hardcover.getTrending('month', 20),
+  ]);
+  const allBooks = [...moreByAuthor, ...trending];
+  const mediaRows = await Media.getRelatedMedia(
+    req.user!,
+    allBooks.map((b) => ({ tmdbId: b.id, mediaType: 'audiobook' }))
+  );
+  const toResult = (b: (typeof allBooks)[number]) => ({
     foreignBookId: String(b.id),
     title: b.title,
     slug: b.slug,
     releaseDate: b.release_date,
     rating: b.rating,
     pageCount: b.pages,
+    overview: b.description,
     remoteCover: b.image?.url,
     authorTitle: b.contributions
       .map((c) => c.author?.name)
       .filter(Boolean)
       .join(', '),
-  }));
-  return res.status(200).json({ results });
+    mediaInfo: mediaRows.find(
+      (m) => m.tmdbId === b.id && m.mediaType === MediaType.AUDIOBOOK
+    ),
+  });
+  const sections = [
+    {
+      key: 'author',
+      title: 'More by this author',
+      results: moreByAuthor.map(toResult),
+    },
+    {
+      key: 'trending',
+      title: 'Trending audiobooks',
+      results: trending.filter((b) => b.id !== id).map(toResult),
+    },
+  ].filter((s) => s.results.length > 0);
+  return res
+    .status(200)
+    .json({ results: sections[0]?.results ?? [], sections });
 });
 
 export default audiobookRoutes;

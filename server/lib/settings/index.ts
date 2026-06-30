@@ -227,6 +227,8 @@ interface FullPublicSettings extends PublicSettings {
   emailEnabled: boolean;
   userEmailRequired: boolean;
   newPlexLogin: boolean;
+  oidcEnabled: boolean;
+  oidcAutoLogin: boolean;
   youtubeUrl: string;
   plexClientIdentifier: string;
 }
@@ -764,6 +766,10 @@ class Settings {
       userEmailRequired:
         this.data.notifications.agents.email.options.userEmailRequired,
       newPlexLogin: this.data.main.newPlexLogin,
+      oidcEnabled: process.env.OIDC_ENABLED?.toLowerCase() === 'true',
+      oidcAutoLogin:
+        process.env.OIDC_ENABLED?.toLowerCase() === 'true' &&
+        process.env.OIDC_AUTO_LOGIN?.toLowerCase() === 'true',
       youtubeUrl: this.data.main.youtubeUrl,
       plexClientIdentifier: this.data.clientId,
     };

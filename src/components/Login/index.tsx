@@ -28,6 +28,7 @@ const messages = defineMessages('components.Login', {
   signinwithplex: 'Use your Plex account',
   signinwithjellyfin: 'Use your {mediaServerName} account',
   signinwithoverseerr: 'Use your {applicationTitle} account',
+  signinwithbryanlabs: 'Use your Bryanlabs account',
   orsigninwith: 'Or sign in with',
 });
 
@@ -110,6 +111,20 @@ const Login = () => {
     (isJellyfin && settings.currentSettings.mediaServerLogin) ||
     settings.currentSettings.localLogin;
   const additionalLoginOptions = [
+    settings.currentSettings.oidcEnabled && (
+      <Button
+        key="bryanlabs"
+        data-testid="bryanlabs-login-button"
+        className="flex-1 bg-transparent"
+        onClick={() => {
+          window.location.href = '/api/v1/auth/oidc/login';
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/os_icon.svg" alt="Bryanlabs" className="mr-2 h-5" />
+        <span>{intl.formatMessage(messages.signinwithbryanlabs)}</span>
+      </Button>
+    ),
     settings.currentSettings.mediaServerLogin &&
       (settings.currentSettings.mediaServerType === MediaServerType.PLEX ? (
         <PlexLoginButton

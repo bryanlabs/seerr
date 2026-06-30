@@ -255,6 +255,8 @@ CoreApp.getInitialProps = async (initialProps) => {
     locale: 'en',
     emailEnabled: false,
     newPlexLogin: true,
+    oidcEnabled: false,
+    oidcAutoLogin: false,
     youtubeUrl: '',
     plexClientIdentifier: '',
   };
@@ -302,11 +304,18 @@ CoreApp.getInitialProps = async (initialProps) => {
         }
       } catch {
         // If there is no user, and ctx.res is set (to check if we are on the server side)
-        // _AND_ we are not already on the login or setup route, redirect to /login with a 307
+        // _AND_ we are not already on the login or setup route, redirect before anything renders
         // before anything actually renders
         if (!router.pathname.match(/(login|setup|resetpassword)/)) {
+          const safeNextPath = router.asPath?.startsWith('/')
+            ? router.asPath
+            : '/';
           ctx.res.writeHead(307, {
-            Location: '/login',
+            Location: currentSettings.oidcAutoLogin
+              ? `/api/v1/auth/oidc/login?next=${encodeURIComponent(
+                  safeNextPath
+                )}`
+              : '/login',
           });
           ctx.res.end();
         }

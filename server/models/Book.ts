@@ -1,3 +1,4 @@
+import type { HardcoverBook } from '@server/api/hardcover';
 import type {
   BookshelfAuthor,
   BookshelfAuthorImage,
@@ -15,6 +16,8 @@ export interface BookEdition {
   format?: string;
   language?: string;
   pageCount?: number;
+  releaseDate?: string;
+  audioSeconds?: number;
   monitored?: boolean;
 }
 
@@ -50,6 +53,8 @@ export interface BookDetails {
   images?: BookshelfAuthorImage[];
   ratings?: { value?: number; votes?: number };
   genres?: string[];
+  moods?: string[];
+  tags?: string[];
   links?: BookLink[];
   editions?: BookEdition[];
   /** Raw `authorTitle` parsed into a usable name (best-effort) */
@@ -157,12 +162,28 @@ export const mapBookDetails = (
     images: book.images,
     ratings: book.ratings,
     genres: book.genres,
+    moods: undefined,
+    tags: undefined,
     links: book.links,
     editions: book.editions,
     mediaType,
     mediaInfo: media,
   };
 };
+
+export const mapHardcoverToBookSearchResult = (book: HardcoverBook) => ({
+  foreignBookId: String(book.id),
+  title: book.title,
+  slug: book.slug,
+  releaseDate: book.release_date ?? undefined,
+  rating: book.rating ?? undefined,
+  pageCount: book.pages ?? undefined,
+  remoteCover: book.image?.url,
+  authorTitle: book.contributions
+    .map((c) => c.author?.name)
+    .filter(Boolean)
+    .join(', '),
+});
 
 interface HardcoverDetailShape {
   id: number;
@@ -174,7 +195,11 @@ interface HardcoverDetailShape {
   pages: number | null;
   description: string | null;
   image: { url: string } | null;
-  cached_tags: { Genre?: { tag: string }[] } | null;
+  cached_tags: {
+    Genre?: { tag: string }[];
+    Mood?: { tag: string }[];
+    Tag?: { tag: string }[];
+  } | null;
   contributions: {
     author: {
       id: number;
@@ -212,6 +237,8 @@ export const mapHardcoverToBookDetails = (
     .filter((a): a is NonNullable<typeof a> => !!a)[0];
   const authorName = primary?.name ?? '';
   const genres = (d.cached_tags?.Genre ?? []).map((g) => g.tag).filter(Boolean);
+  const moods = (d.cached_tags?.Mood ?? []).map((g) => g.tag).filter(Boolean);
+  const tags = (d.cached_tags?.Tag ?? []).map((g) => g.tag).filter(Boolean);
   return {
     bookshelfId: media?.externalServiceId ?? undefined,
     foreignBookId: String(d.id),
@@ -249,6 +276,8 @@ export const mapHardcoverToBookDetails = (
     ratings:
       d.rating != null ? { value: d.rating, votes: d.users_count } : undefined,
     genres: genres.length ? genres : undefined,
+    moods: moods.length ? moods : undefined,
+    tags: tags.length ? tags : undefined,
     links: undefined,
     editions: d.editions?.map((e) => ({
       id: e.id,
@@ -256,6 +285,8 @@ export const mapHardcoverToBookDetails = (
       foreignEditionId: String(e.id),
       isbn13: e.isbn_13 ?? undefined,
       pageCount: e.pages ?? undefined,
+      releaseDate: e.release_date ?? undefined,
+      audioSeconds: e.audio_seconds ?? undefined,
       format: e.audio_seconds && e.audio_seconds > 0 ? 'audio' : undefined,
     })),
     mediaType,
