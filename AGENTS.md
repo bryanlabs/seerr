@@ -111,7 +111,7 @@ Image: `ghcr.io/bryanlabs/seerr:<version>` built by `.github/workflows/ci.yml` (
 docker buildx build --builder cloud-bryanlabs-builder --platform linux/amd64 .
 ```
 
-Commits require conventional commit format (`@commitlint/config-conventional`) enforced by husky pre-commit hook. Commit signing via 1Password is required.
+Commits require conventional commit format (`@commitlint/config-conventional`) enforced by husky pre-commit hook. Use Git's configured signing method; no specific signing provider is required. Report actual signing errors without changing providers or bypassing signing.
 
 Key env vars (set in k8s):
 - `HARDCOVER_TOKEN` -- from secret `rreading-glasses-hardcover-secret` key `hardcover-token` (optional but disables discover if absent)
