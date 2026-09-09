@@ -1,4 +1,5 @@
 import Slider from '@app/components/Slider';
+import BookMediaCard from '@app/components/TitleCard/BookMediaCard';
 import TmdbTitleCard from '@app/components/TitleCard/TmdbTitleCard';
 import { Permission, useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
@@ -37,15 +38,27 @@ const RecentlyAddedSlider = () => {
       <Slider
         sliderKey="media"
         isLoading={!media}
-        items={(media?.results ?? []).map((item) => (
-          <TmdbTitleCard
-            key={`media-slider-item-${item.id}`}
-            id={item.id}
-            tmdbId={item.tmdbId}
-            tvdbId={item.tvdbId}
-            type={item.mediaType}
-          />
-        ))}
+        items={(media?.results ?? []).map((item) => {
+          if (item.mediaType === 'audiobook' || item.mediaType === 'ebook') {
+            return (
+              <BookMediaCard
+                key={`media-slider-item-${item.id}`}
+                id={item.id}
+                foreignBookId={item.tmdbId}
+                mediaType={item.mediaType}
+              />
+            );
+          }
+          return (
+            <TmdbTitleCard
+              key={`media-slider-item-${item.id}`}
+              id={item.id}
+              tmdbId={item.tmdbId}
+              tvdbId={item.tvdbId}
+              type={item.mediaType as 'movie' | 'tv'}
+            />
+          );
+        })}
       />
     </>
   );

@@ -5,5 +5,8 @@ import 'express-session';
 declare module 'express-session' {
   interface SessionData {
     userId: number;
+    oidcState?: string;
+    oidcNonce?: string;
+    oidcNext?: string;
   }
 }

@@ -12,12 +12,19 @@ export interface UserSettingsGeneralResponse {
   movieQuotaDays?: number;
   tvQuotaLimit?: number;
   tvQuotaDays?: number;
+  audiobookQuotaLimit?: number;
+  audiobookQuotaDays?: number;
+  ebookQuotaLimit?: number;
+  ebookQuotaDays?: number;
   globalMovieQuotaDays?: number;
   globalMovieQuotaLimit?: number;
   globalTvQuotaLimit?: number;
   globalTvQuotaDays?: number;
   watchlistSyncMovies?: boolean;
   watchlistSyncTv?: boolean;
+  hardcoverUsername?: string;
+  autoRequestAudiobooks?: boolean;
+  autoRequestEbooks?: boolean;
 }
 
 export type NotificationAgentTypes = Record<NotificationAgentKey, number>;

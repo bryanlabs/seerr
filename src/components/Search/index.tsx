@@ -1,6 +1,7 @@
 import Header from '@app/components/Common/Header';
 import ListView from '@app/components/Common/ListView';
 import PageTitle from '@app/components/Common/PageTitle';
+import SearchBookSection from '@app/components/Search/SearchBookSection';
 import useDiscover from '@app/hooks/useDiscover';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
@@ -55,6 +56,14 @@ const Search = () => {
         }
         isReachingEnd={isReachingEnd}
         onScrollBottom={fetchMore}
+      />
+      <SearchBookSection
+        query={typeof router.query.query === 'string' ? router.query.query : ''}
+        mediaType="audiobook"
+      />
+      <SearchBookSection
+        query={typeof router.query.query === 'string' ? router.query.query : ''}
+        mediaType="ebook"
       />
     </>
   );

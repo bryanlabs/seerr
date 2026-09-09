@@ -10,7 +10,7 @@ import defineMessages from '@app/utils/defineMessages';
 import { ArrowDownOnSquareIcon, BeakerIcon } from '@heroicons/react/24/outline';
 import axios from 'axios';
 import { Form, Formik } from 'formik';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
@@ -307,6 +307,8 @@ const SettingsMetadata = () => {
         </div>
       </div>
 
+      <BooksMetadataInfo />
+
       <div className="section">
         <Formik
           initialValues={{ metadata: initialValues }}
@@ -473,6 +475,57 @@ const SettingsMetadata = () => {
         </Formik>
       </div>
     </>
+  );
+};
+
+const BooksMetadataInfo = () => {
+  const [audiobookHealth, setAudiobookHealth] = useState<
+    'ok' | 'failed' | 'unknown'
+  >('unknown');
+  const [ebookHealth, setEbookHealth] = useState<'ok' | 'failed' | 'unknown'>(
+    'unknown'
+  );
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get('/api/v1/audiobook/profiles')
+      .then(() => !cancelled && setAudiobookHealth('ok'))
+      .catch(() => !cancelled && setAudiobookHealth('failed'));
+    axios
+      .get('/api/v1/ebook/profiles')
+      .then(() => !cancelled && setEbookHealth('ok'))
+      .catch(() => !cancelled && setEbookHealth('failed'));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const badge = (h: 'ok' | 'failed' | 'unknown') => {
+    if (h === 'ok') return <Badge badgeType="success">Operational</Badge>;
+    if (h === 'failed') return <Badge badgeType="danger">Unreachable</Badge>;
+    return <Badge badgeType="warning">Checking…</Badge>;
+  };
+  return (
+    <div className="mb-6 rounded-lg bg-gray-800 p-4">
+      <h4 className="mb-3 text-lg font-medium">Books</h4>
+      <p className="description mb-3">
+        Audiobook and ebook metadata comes from <strong>Hardcover</strong> via
+        the cluster's <code>rreading-glasses</code> proxy, which Bookshelf
+        (Readarr fork) calls for lookups, covers, ratings, and editions.
+        Switching providers requires re-pointing the rreading-glasses backend,
+        not a Seerr setting. The Hardcover API token is rotated annually under{' '}
+        INF-4.
+      </p>
+      <div className="flex flex-col space-y-3">
+        <div className="flex items-center">
+          <span className="mr-2 w-32">Bookshelf-Audiobooks:</span>
+          {badge(audiobookHealth)}
+        </div>
+        <div className="flex items-center">
+          <span className="mr-2 w-32">Bookshelf-Ebooks:</span>
+          {badge(ebookHealth)}
+        </div>
+      </div>
+    </div>
   );
 };
 

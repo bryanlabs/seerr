@@ -47,6 +47,8 @@ export interface PublicSettingsResponse {
   locale: string;
   emailEnabled: boolean;
   newPlexLogin: boolean;
+  oidcEnabled: boolean;
+  oidcAutoLogin: boolean;
   youtubeUrl: string;
   plexClientIdentifier: string;
 }

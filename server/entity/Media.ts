@@ -1,3 +1,4 @@
+import BookshelfAPI from '@server/api/servarr/bookshelf';
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import { MediaStatus, MediaType } from '@server/constants/media';
@@ -328,6 +329,24 @@ class Media {
             : SonarrAPI.buildUrl(
                 server,
                 `/series/${this.externalServiceSlug4k}`
+              );
+        }
+      }
+    }
+
+    if (
+      this.mediaType === MediaType.AUDIOBOOK ||
+      this.mediaType === MediaType.EBOOK
+    ) {
+      if (this.serviceId !== null && this.externalServiceSlug !== null) {
+        const settings = getSettings();
+        const server = settings.bookshelf.find((b) => b.id === this.serviceId);
+        if (server) {
+          this.serviceUrl = server.externalUrl
+            ? `${server.externalUrl}/book/${this.externalServiceSlug}`
+            : BookshelfAPI.buildUrl(
+                server,
+                `/book/${this.externalServiceSlug}`
               );
         }
       }

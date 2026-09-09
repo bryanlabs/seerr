@@ -1,3 +1,4 @@
+import BookshelfAPI from '@server/api/servarr/bookshelf';
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import {
@@ -173,6 +174,16 @@ requestRoutes.get<Record<string, unknown>, RequestResultsResponse>(
             type: MediaType.TV,
           });
           break;
+        case 'audiobook':
+          query = query.andWhere('request.type = :type', {
+            type: MediaType.AUDIOBOOK,
+          });
+          break;
+        case 'ebook':
+          query = query.andWhere('request.type = :type', {
+            type: MediaType.EBOOK,
+          });
+          break;
       }
 
       const [requests, requestCount] = await query
@@ -213,6 +224,23 @@ requestRoutes.get<Record<string, unknown>, RequestResultsResponse>(
         })
       );
 
+      // get all quality profiles for every configured bookshelf server
+      // (covers both audiobook and ebook instances)
+      const bookshelfServers = await Promise.all(
+        settings.bookshelf.map(async (bookshelfSetting) => {
+          const bookshelf = new BookshelfAPI({
+            apiKey: bookshelfSetting.apiKey,
+            url: BookshelfAPI.buildUrl(bookshelfSetting, '/api/v1'),
+          });
+
+          return {
+            id: bookshelfSetting.id,
+            mediaType: bookshelfSetting.mediaType,
+            profiles: await bookshelf.getProfiles().catch(() => undefined),
+          };
+        })
+      );
+
       // add profile names to the media requests, with undefined if not found
       let mappedRequests = requests.map((r) => {
         switch (r.type) {
@@ -234,12 +262,24 @@ requestRoutes.get<Record<string, unknown>, RequestResultsResponse>(
                 ?.profiles?.find((profile) => profile.id === r.profileId)?.name,
             };
           }
+          case MediaType.AUDIOBOOK:
+          case MediaType.EBOOK: {
+            return {
+              ...r,
+              profileName: bookshelfServers
+                .find((serverr) => serverr.id === r.serverId)
+                ?.profiles?.find((profile) => profile.id === r.profileId)?.name,
+            };
+          }
         }
       });
 
       // add canRemove prop if user has permission
       if (req.user?.hasPermission(Permission.MANAGE_REQUESTS)) {
         mappedRequests = mappedRequests.map((r) => {
+          if (!r) {
+            return r;
+          }
           switch (r.type) {
             case MediaType.MOVIE: {
               return {
@@ -260,6 +300,15 @@ requestRoutes.get<Record<string, unknown>, RequestResultsResponse>(
                   (server) =>
                     server.id ===
                     (r.is4k ? r.media.serviceId4k : r.media.serviceId)
+                ),
+              };
+            }
+            case MediaType.AUDIOBOOK:
+            case MediaType.EBOOK: {
+              return {
+                ...r,
+                canRemove: bookshelfServers.some(
+                  (server) => server.id === r.media.serviceId
                 ),
               };
             }
@@ -641,7 +690,7 @@ requestRoutes.post<{
     try {
       const request = await requestRepository.findOneOrFail({
         where: { id: Number(req.params.requestId) },
-        relations: { requestedBy: true, modifiedBy: true },
+        relations: { media: true, requestedBy: true, modifiedBy: true },
       });
 
       // this also triggers updating the parent media's status & sending to *arr
@@ -672,7 +721,7 @@ requestRoutes.post<{
     try {
       const request = await requestRepository.findOneOrFail({
         where: { id: Number(req.params.requestId) },
-        relations: { requestedBy: true, modifiedBy: true },
+        relations: { media: true, requestedBy: true, modifiedBy: true },
       });
 
       let newStatus: MediaRequestStatus;
@@ -687,6 +736,8 @@ requestRoutes.post<{
         case 'decline':
           newStatus = MediaRequestStatus.DECLINED;
           break;
+        default:
+          return next({ status: 400, message: 'Invalid request status.' });
       }
 
       request.status = newStatus;

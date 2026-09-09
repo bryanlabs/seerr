@@ -47,6 +47,66 @@ import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 
 const API_SPEC_PATH = path.join(__dirname, '../seerr-api.yml');
+const DEFAULT_SESSION_COOKIE_NAME = 'connect.sid';
+
+const getSessionCookieName = (): string =>
+  process.env.SESSION_COOKIE_NAME || DEFAULT_SESSION_COOKIE_NAME;
+
+const getOpenApiCookieAuthName = (
+  apiDocs: Record<string, unknown>
+): string | undefined => {
+  const components = apiDocs.components as Record<string, unknown> | undefined;
+  const securitySchemes = components?.securitySchemes as
+    | Record<string, unknown>
+    | undefined;
+  const cookieAuth = securitySchemes?.cookieAuth as
+    | Record<string, unknown>
+    | undefined;
+  const name = cookieAuth?.name;
+
+  return typeof name === 'string' ? name : undefined;
+};
+
+const validateStartupInvariants = (apiDocs: Record<string, unknown>): void => {
+  const runtimeCookieName = getSessionCookieName();
+  const openApiCookieName = getOpenApiCookieAuthName(apiDocs);
+
+  if (!openApiCookieName) {
+    logger.error(
+      'SEERR_INVARIANT_OPENAPI_COOKIE_AUTH_MISSING: OpenAPI cookie auth name is missing; refusing to start.',
+      {
+        label: 'StartupInvariant',
+        invariantCode: 'SEERR_INVARIANT_OPENAPI_COOKIE_AUTH_MISSING',
+        expectedPath: 'components.securitySchemes.cookieAuth.name',
+        runtimeCookieName,
+      }
+    );
+    process.exit(1);
+  }
+
+  if (runtimeCookieName !== openApiCookieName) {
+    logger.error(
+      'SEERR_INVARIANT_SESSION_COOKIE_MISMATCH: Runtime session cookie name does not match OpenAPI cookie auth name; refusing to start.',
+      {
+        label: 'StartupInvariant',
+        invariantCode: 'SEERR_INVARIANT_SESSION_COOKIE_MISMATCH',
+        runtimeCookieName,
+        openApiCookieName,
+        sessionCookieEnv: process.env.SESSION_COOKIE_NAME || '(unset)',
+        remediation:
+          'Set SESSION_COOKIE_NAME to the OpenAPI cookieAuth.name, or update the OpenAPI spec and deployment together.',
+      }
+    );
+    process.exit(1);
+  }
+
+  logger.info('Seerr startup invariant check passed.', {
+    label: 'StartupInvariant',
+    invariantCode: 'SEERR_INVARIANT_SESSION_COOKIE_MATCH',
+    runtimeCookieName,
+    openApiCookieName,
+  });
+};
 
 logger.info(`Starting Seerr version ${getAppVersion()}`);
 const dev = process.env.NODE_ENV !== 'production';
@@ -83,6 +143,10 @@ app
     // Load Settings
     const settings = await getSettings().load();
     restartFlag.initializeSettings(settings);
+
+    const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
+    const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
+    validateStartupInvariants(apiDocs);
 
     initI18n();
 
@@ -207,6 +271,7 @@ app
     server.use(
       '/api',
       session({
+        name: getSessionCookieName(),
         secret: settings.sessionSecret,
         resave: false,
         saveUninitialized: false,
@@ -222,13 +287,15 @@ app
         }).connect(sessionRespository) as Store,
       })
     );
-    const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
-    const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
     server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
     server.use(
       OpenApiValidator.middleware({
         apiSpec: API_SPEC_PATH,
         validateRequests: true,
+        // Bryanlabs fork: routes added by this fork (audiobook, ebook,
+        // settings/bookshelf) are not in seerr-api.yml. Skip strict validation
+        // for any undocumented path rather than 404'ing it.
+        ignoreUndocumented: true,
       })
     );
     /**

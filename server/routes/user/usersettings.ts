@@ -57,12 +57,19 @@ userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
         movieQuotaDays: user.movieQuotaDays,
         tvQuotaLimit: user.tvQuotaLimit,
         tvQuotaDays: user.tvQuotaDays,
+        audiobookQuotaLimit: user.audiobookQuotaLimit,
+        audiobookQuotaDays: user.audiobookQuotaDays,
+        ebookQuotaLimit: user.ebookQuotaLimit,
+        ebookQuotaDays: user.ebookQuotaDays,
         globalMovieQuotaDays: defaultQuotas.movie.quotaDays,
         globalMovieQuotaLimit: defaultQuotas.movie.quotaLimit,
         globalTvQuotaDays: defaultQuotas.tv.quotaDays,
         globalTvQuotaLimit: defaultQuotas.tv.quotaLimit,
         watchlistSyncMovies: user.settings?.watchlistSyncMovies,
         watchlistSyncTv: user.settings?.watchlistSyncTv,
+        hardcoverUsername: user.settings?.hardcoverUsername,
+        autoRequestAudiobooks: user.settings?.autoRequestAudiobooks,
+        autoRequestEbooks: user.settings?.autoRequestEbooks,
       });
     } catch (e) {
       next({ status: 500, message: e.message });
@@ -117,6 +124,10 @@ userSettingsRoutes.post<
       user.movieQuotaLimit = req.body.movieQuotaLimit;
       user.tvQuotaDays = req.body.tvQuotaDays;
       user.tvQuotaLimit = req.body.tvQuotaLimit;
+      user.audiobookQuotaDays = req.body.audiobookQuotaDays;
+      user.audiobookQuotaLimit = req.body.audiobookQuotaLimit;
+      user.ebookQuotaDays = req.body.ebookQuotaDays;
+      user.ebookQuotaLimit = req.body.ebookQuotaLimit;
     }
 
     if (!user.settings) {
@@ -129,6 +140,9 @@ userSettingsRoutes.post<
         originalLanguage: req.body.originalLanguage,
         watchlistSyncMovies: req.body.watchlistSyncMovies,
         watchlistSyncTv: req.body.watchlistSyncTv,
+        hardcoverUsername: req.body.hardcoverUsername,
+        autoRequestAudiobooks: req.body.autoRequestAudiobooks,
+        autoRequestEbooks: req.body.autoRequestEbooks,
       });
     } else {
       user.settings.discordId = req.body.discordId;
@@ -138,6 +152,9 @@ userSettingsRoutes.post<
       user.settings.originalLanguage = req.body.originalLanguage;
       user.settings.watchlistSyncMovies = req.body.watchlistSyncMovies;
       user.settings.watchlistSyncTv = req.body.watchlistSyncTv;
+      user.settings.hardcoverUsername = req.body.hardcoverUsername;
+      user.settings.autoRequestAudiobooks = req.body.autoRequestAudiobooks;
+      user.settings.autoRequestEbooks = req.body.autoRequestEbooks;
     }
 
     const savedUser = await userRepository.save(user);
@@ -151,6 +168,9 @@ userSettingsRoutes.post<
       originalLanguage: savedUser.settings?.originalLanguage,
       watchlistSyncMovies: savedUser.settings?.watchlistSyncMovies,
       watchlistSyncTv: savedUser.settings?.watchlistSyncTv,
+      hardcoverUsername: savedUser.settings?.hardcoverUsername,
+      autoRequestAudiobooks: savedUser.settings?.autoRequestAudiobooks,
+      autoRequestEbooks: savedUser.settings?.autoRequestEbooks,
       email: savedUser.email,
     });
   } catch (e) {

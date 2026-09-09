@@ -4,6 +4,8 @@ export type AvailableCacheIds =
   | 'tmdb'
   | 'radarr'
   | 'sonarr'
+  | 'bookshelf'
+  | 'hardcover'
   | 'rt'
   | 'imdb'
   | 'github'
@@ -50,6 +52,11 @@ class CacheManager {
     }),
     radarr: new Cache('radarr', 'Radarr API'),
     sonarr: new Cache('sonarr', 'Sonarr API'),
+    bookshelf: new Cache('bookshelf', 'Bookshelf (Readarr) API'),
+    hardcover: new Cache('hardcover', 'Hardcover GraphQL API', {
+      stdTtl: 21600,
+      checkPeriod: 60 * 30,
+    }),
     rt: new Cache('rt', 'Rotten Tomatoes API', {
       stdTtl: 43200,
       checkPeriod: 60 * 30,
