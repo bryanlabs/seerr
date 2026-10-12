@@ -12,6 +12,11 @@ describe('book Plex art', () => {
     },
     { ratingKey: '2', title: 'Ready Player Two', parentTitle: 'Ernest Cline' },
     { ratingKey: '3', title: 'Ready Player One', parentTitle: 'Ernest Cline' },
+    {
+      ratingKey: '4',
+      title: 'The Hero with a Thousand Faces (Unabridged)',
+      parentTitle: 'Joseph Campbell',
+    },
   ];
 
   it('matches series-numbered albums and subtitles by title and surname', () => {
@@ -23,6 +28,14 @@ describe('book Plex art', () => {
       matchAlbum(albums, 'Ready Player Two: A Novel', 'Ernest Cline')
         ?.ratingKey,
       '2'
+    );
+  });
+
+  it('ignores edition tags like (Unabridged) in the album title', () => {
+    assert.strictEqual(
+      matchAlbum(albums, 'The Hero with a Thousand Faces', 'Joseph Campbell')
+        ?.ratingKey,
+      '4'
     );
   });
 

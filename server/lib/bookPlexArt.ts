@@ -32,6 +32,7 @@ const titleKey = (title: string): string =>
   title
     .toLowerCase()
     .replace(/^\d+\s+/, '')
+    .replace(/\s*[([][^)\]]*[)\]]/g, '')
     .split(/:| - /)[0]
     .replace(/[^a-z0-9]/g, '');
 
