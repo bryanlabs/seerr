@@ -4,7 +4,7 @@
 
 BryanLabs fork of [Seerr](https://github.com/Seerr/seerr) (itself a fork of Jellyseerr/Overseerr). Seerr is a media request manager for Jellyfin/Plex/Emby integrated with Radarr and Sonarr. The BryanLabs fork adds audiobook and ebook support via Hardcover (metadata/discovery) and Bookshelf (a Readarr fork for download automation).
 
-Current fork version: `3.2.1-bryanlabs.56`. Active branch: `feat/audiobook-ebook-support`.
+Current fork version: `3.2.1-bryanlabs.57`. Active branch: `feat/audiobook-ebook-support`.
 
 ## Where it is used
 
@@ -35,6 +35,12 @@ All custom work lives on the `feat/audiobook-ebook-support` branch. None of it i
 - `server/routes/audiobook.ts` -- `/api/v1/audiobook/` (search, tags, discover, profiles, request, queue, detail).
 - `server/routes/ebook.ts` -- Mirror of audiobook routes for ebook type.
 - Both registered in `server/routes/index.ts` with `isAuthenticated()` guard.
+
+### Book request API key (Book Chat)
+`server/middleware/auth.ts` -- when `BOOK_REQUEST_API_KEY` is set, that key acts as the user named in `X-API-User` (id, username or Plex username) and `restrictScopedApiKey` lets it reach only book search, book detail, the two book request routes, `/auth/me` and the caller's own quota. Everything else is 403, and request bodies are cut to the book and author so the configured server, quality profile, folder and tags always apply. Book Chat uses it to file requests as the reader; it must never be given the main API key. Tests: `server/middleware/auth.test.ts`.
+
+### Plex art for requested audiobooks
+`server/lib/bookPlexArt.ts` -- run at the end of every `bookshelf-sync`. For audiobooks that became AVAILABLE in the last seven days, it finds the Plex album (title and author surname, ignoring series numbers like `01 `) and posts the Hardcover cover to the album and the author when either lacks a real image (at least 8 KB, JPEG or PNG), then verifies by downloading. Plex Audiobooks uses the `none` agent, so without this a requested book keeps blank tiles. Tests: `server/lib/bookPlexArt.test.ts`.
 
 ### Subscriber hook
 `server/subscriber/MediaRequestSubscriber.ts` -- `sendToBookshelf()` fires when a book `MediaRequest` transitions to APPROVED; calls Bookshelf `addBook`, stores `externalServiceId`, marks status PROCESSING.
@@ -108,18 +114,22 @@ src/
 Image: `ghcr.io/bryanlabs/seerr:<version>` built by `.github/workflows/ci.yml` (multi-arch amd64+arm64). For local AMD64 builds use:
 
 ```
-docker buildx build --builder cloud-bryanlabs-builder --platform linux/amd64 .
+docker buildx build --builder worker1 --platform linux/amd64 \
+  -t ghcr.io/bryanlabs/seerr:v<version> --push .
 ```
 
 Commits require conventional commit format (`@commitlint/config-conventional`) enforced by husky pre-commit hook. Use Git's configured signing method; no specific signing provider is required. Report actual signing errors without changing providers or bypassing signing.
 
 Key env vars (set in k8s):
 - `HARDCOVER_TOKEN` -- from secret `rreading-glasses-hardcover-secret` key `hardcover-token` (optional but disables discover if absent)
+- `BOOK_REQUEST_API_KEY` -- from secret `seerr-book-request` key `api-key` (optional; unset turns the scoped key off). Book Chat holds a copy in `apps/book-chat-seerr`.
 - `OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (from secret `seerr-oidc`), `OIDC_REDIRECT_URI`, `OIDC_AUTO_LOGIN`, `SESSION_COOKIE_NAME`
 
 Config PVC: `overseerr-config-pvc` mounted at `/app/config`.
 
 ## Gotchas
+
+- Local tests need Node 22 (`engine-strict`). Without it, `pnpm --config.engine-strict=false test` runs them on a newer Node; the image always builds on Node 22.
 
 - `ignoreUndocumented: true` at `server/index.ts:298` is required because audiobook/ebook routes are not in `seerr-api.yml`. Removing it causes all book routes to return 404.
 - Startup invariant check in the k8s deployment validates the `seerr-api.yml` cookie auth name against `SESSION_COOKIE_NAME` env before starting. Mismatch causes crash-loop.

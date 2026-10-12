@@ -10,7 +10,11 @@ import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { checkUser, isAuthenticated } from '@server/middleware/auth';
+import {
+  checkUser,
+  isAuthenticated,
+  restrictScopedApiKey,
+} from '@server/middleware/auth';
 import deprecatedRoute from '@server/middleware/deprecation';
 import { mapProductionCompany } from '@server/models/Movie';
 import { mapNetwork } from '@server/models/Tv';
@@ -47,6 +51,7 @@ import user from './user';
 const router = Router();
 
 router.use(checkUser);
+router.use(restrictScopedApiKey);
 
 router.get<unknown, StatusResponse>('/status', async (_req, res) => {
   // Bryanlabs fork: we don't track upstream Seerr releases, so the

@@ -7,6 +7,7 @@ import {
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
+import { postRecentAudiobookArt } from '@server/lib/bookPlexArt';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { In } from 'typeorm';
@@ -133,6 +134,14 @@ class BookshelfSync {
         errorMessage: (e as Error).message,
       });
     } finally {
+      try {
+        await postRecentAudiobookArt();
+      } catch (e) {
+        logger.warn('Posting audiobook art to Plex failed', {
+          label: 'BookshelfSync',
+          errorMessage: (e as Error).message,
+        });
+      }
       this.isRunning = false;
     }
   }
