@@ -58,6 +58,8 @@ const messages = defineMessages(
     streamingRegionTip: 'Show streaming sites by regional availability',
     movierequestlimit: 'Movie Request Limit',
     seriesrequestlimit: 'Series Request Limit',
+    audiobookrequestlimit: 'Audiobook Request Limit',
+    ebookrequestlimit: 'Ebook Request Limit',
     enableOverride: 'Override Global Limit',
     applanguage: 'Display Language',
     languageDefault: 'Default ({language})',
@@ -73,6 +75,15 @@ const messages = defineMessages(
     plexwatchlistsyncseries: 'Auto-Request Series',
     plexwatchlistsyncseriestip:
       'Automatically request series on your <PlexWatchlistSupportLink>Plex Watchlist</PlexWatchlistSupportLink>',
+    hardcoverUsername: 'Hardcover Username',
+    hardcoverUsernameTip:
+      'Your username on hardcover.app (used to read your Want-to-Read list).',
+    autoRequestAudiobooks: 'Auto-Request Audiobooks',
+    autoRequestAudiobooksTip:
+      'Automatically request audiobooks on your Hardcover Want-to-Read list.',
+    autoRequestEbooks: 'Auto-Request Ebooks',
+    autoRequestEbooksTip:
+      'Automatically request ebooks on your Hardcover Want-to-Read list.',
   }
 );
 
@@ -82,6 +93,8 @@ const UserGeneralSettings = () => {
   const { locale, setLocale } = useLocale();
   const [movieQuotaEnabled, setMovieQuotaEnabled] = useState(false);
   const [tvQuotaEnabled, setTvQuotaEnabled] = useState(false);
+  const [audiobookQuotaEnabled, setAudiobookQuotaEnabled] = useState(false);
+  const [ebookQuotaEnabled, setEbookQuotaEnabled] = useState(false);
   const router = useRouter();
   const {
     user,
@@ -131,6 +144,13 @@ const UserGeneralSettings = () => {
     setTvQuotaEnabled(
       data?.tvQuotaLimit != undefined && data?.tvQuotaDays != undefined
     );
+    setAudiobookQuotaEnabled(
+      data?.audiobookQuotaLimit != undefined &&
+        data?.audiobookQuotaDays != undefined
+    );
+    setEbookQuotaEnabled(
+      data?.ebookQuotaLimit != undefined && data?.ebookQuotaDays != undefined
+    );
   }, [data]);
 
   if (!data && !error) {
@@ -167,8 +187,15 @@ const UserGeneralSettings = () => {
           movieQuotaDays: data?.movieQuotaDays,
           tvQuotaLimit: data?.tvQuotaLimit,
           tvQuotaDays: data?.tvQuotaDays,
+          audiobookQuotaLimit: data?.audiobookQuotaLimit,
+          audiobookQuotaDays: data?.audiobookQuotaDays,
+          ebookQuotaLimit: data?.ebookQuotaLimit,
+          ebookQuotaDays: data?.ebookQuotaDays,
           watchlistSyncMovies: data?.watchlistSyncMovies,
           watchlistSyncTv: data?.watchlistSyncTv,
+          hardcoverUsername: data?.hardcoverUsername ?? '',
+          autoRequestAudiobooks: data?.autoRequestAudiobooks ?? false,
+          autoRequestEbooks: data?.autoRequestEbooks ?? false,
         }}
         validationSchema={UserGeneralSettingsSchema}
         enableReinitialize
@@ -189,8 +216,21 @@ const UserGeneralSettings = () => {
               movieQuotaDays: movieQuotaEnabled ? values.movieQuotaDays : null,
               tvQuotaLimit: tvQuotaEnabled ? values.tvQuotaLimit : null,
               tvQuotaDays: tvQuotaEnabled ? values.tvQuotaDays : null,
+              audiobookQuotaLimit: audiobookQuotaEnabled
+                ? values.audiobookQuotaLimit
+                : null,
+              audiobookQuotaDays: audiobookQuotaEnabled
+                ? values.audiobookQuotaDays
+                : null,
+              ebookQuotaLimit: ebookQuotaEnabled
+                ? values.ebookQuotaLimit
+                : null,
+              ebookQuotaDays: ebookQuotaEnabled ? values.ebookQuotaDays : null,
               watchlistSyncMovies: values.watchlistSyncMovies,
               watchlistSyncTv: values.watchlistSyncTv,
+              hardcoverUsername: values.hardcoverUsername || null,
+              autoRequestAudiobooks: !!values.autoRequestAudiobooks,
+              autoRequestEbooks: !!values.autoRequestEbooks,
             });
 
             if (currentUser?.id === user?.id && setLocale) {
@@ -540,6 +580,71 @@ const UserGeneralSettings = () => {
                         </div>
                       </div>
                     </div>
+                    <div className="form-row">
+                      <label
+                        htmlFor="audiobookQuotaLimit"
+                        className="text-label"
+                      >
+                        <span>
+                          {intl.formatMessage(messages.audiobookrequestlimit)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <div className="flex flex-col">
+                          <div className="mb-4 flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={audiobookQuotaEnabled}
+                              onChange={() =>
+                                setAudiobookQuotaEnabled((s) => !s)
+                              }
+                            />
+                            <span className="ml-2 text-gray-300">
+                              {intl.formatMessage(messages.enableOverride)}
+                            </span>
+                          </div>
+                          <QuotaSelector
+                            isDisabled={!audiobookQuotaEnabled}
+                            dayFieldName="audiobookQuotaDays"
+                            limitFieldName="audiobookQuotaLimit"
+                            mediaType="audiobook"
+                            onChange={setFieldValue}
+                            defaultDays={values.audiobookQuotaDays}
+                            defaultLimit={values.audiobookQuotaLimit}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <label htmlFor="ebookQuotaLimit" className="text-label">
+                        <span>
+                          {intl.formatMessage(messages.ebookrequestlimit)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <div className="flex flex-col">
+                          <div className="mb-4 flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={ebookQuotaEnabled}
+                              onChange={() => setEbookQuotaEnabled((s) => !s)}
+                            />
+                            <span className="ml-2 text-gray-300">
+                              {intl.formatMessage(messages.enableOverride)}
+                            </span>
+                          </div>
+                          <QuotaSelector
+                            isDisabled={!ebookQuotaEnabled}
+                            dayFieldName="ebookQuotaDays"
+                            limitFieldName="ebookQuotaLimit"
+                            mediaType="ebook"
+                            onChange={setFieldValue}
+                            defaultDays={values.ebookQuotaDays}
+                            defaultLimit={values.ebookQuotaLimit}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </>
                 )}
               {hasPermission(
@@ -635,6 +740,71 @@ const UserGeneralSettings = () => {
                     </div>
                   </div>
                 )}
+              <div className="form-row">
+                <label htmlFor="hardcoverUsername" className="text-label">
+                  <span>{intl.formatMessage(messages.hardcoverUsername)}</span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.hardcoverUsernameTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <div className="form-input-field">
+                    <Field
+                      id="hardcoverUsername"
+                      name="hardcoverUsername"
+                      type="text"
+                      placeholder="e.g. yourname"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="form-row">
+                <label
+                  htmlFor="autoRequestAudiobooks"
+                  className="checkbox-label"
+                >
+                  <span>
+                    {intl.formatMessage(messages.autoRequestAudiobooks)}
+                  </span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.autoRequestAudiobooksTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id="autoRequestAudiobooks"
+                    name="autoRequestAudiobooks"
+                    onChange={() => {
+                      setFieldValue(
+                        'autoRequestAudiobooks',
+                        !values.autoRequestAudiobooks
+                      );
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <label htmlFor="autoRequestEbooks" className="checkbox-label">
+                  <span>{intl.formatMessage(messages.autoRequestEbooks)}</span>
+                  <span className="label-tip">
+                    {intl.formatMessage(messages.autoRequestEbooksTip)}
+                  </span>
+                </label>
+                <div className="form-input-area">
+                  <Field
+                    type="checkbox"
+                    id="autoRequestEbooks"
+                    name="autoRequestEbooks"
+                    onChange={() => {
+                      setFieldValue(
+                        'autoRequestEbooks',
+                        !values.autoRequestEbooks
+                      );
+                    }}
+                  />
+                </div>
+              </div>
               <div className="actions">
                 <div className="flex justify-end">
                   <span className="ml-3 inline-flex rounded-md shadow-sm">

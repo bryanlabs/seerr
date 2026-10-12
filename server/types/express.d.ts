@@ -8,6 +8,7 @@ declare global {
     export interface Request {
       user?: User;
       locale?: string;
+      apiScope?: 'book-request';
     }
   }
 

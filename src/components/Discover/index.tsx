@@ -3,6 +3,7 @@ import ConfirmButton from '@app/components/Common/ConfirmButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
+import BookSlider from '@app/components/Discover/BookSlider';
 import { sliderTitles } from '@app/components/Discover/constants';
 import CreateSlider from '@app/components/Discover/CreateSlider';
 import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
@@ -282,6 +283,68 @@ const Discover = () => {
             break;
           case DiscoverSliderType.NETWORKS:
             sliderComponent = <NetworkSlider />;
+            break;
+          case DiscoverSliderType.POPULAR_AUDIOBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="popular-audiobooks"
+                title={intl.formatMessage(sliderTitles.popularaudiobooks)}
+                mediaType="audiobook"
+                sort="popularity"
+              />
+            );
+            break;
+          case DiscoverSliderType.TRENDING_AUDIOBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="trending-audiobooks"
+                title={intl.formatMessage(sliderTitles.trendingaudiobooks)}
+                mediaType="audiobook"
+                sort="trending"
+                trendingPeriod="month"
+              />
+            );
+            break;
+          case DiscoverSliderType.NEW_AUDIOBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="new-audiobooks"
+                title={intl.formatMessage(sliderTitles.newaudiobooks)}
+                mediaType="audiobook"
+                sort="release_date"
+              />
+            );
+            break;
+          case DiscoverSliderType.POPULAR_EBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="popular-ebooks"
+                title={intl.formatMessage(sliderTitles.popularebooks)}
+                mediaType="ebook"
+                sort="popularity"
+              />
+            );
+            break;
+          case DiscoverSliderType.TRENDING_EBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="trending-ebooks"
+                title={intl.formatMessage(sliderTitles.trendingebooks)}
+                mediaType="ebook"
+                sort="trending"
+                trendingPeriod="month"
+              />
+            );
+            break;
+          case DiscoverSliderType.NEW_EBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="new-ebooks"
+                title={intl.formatMessage(sliderTitles.newebooks)}
+                mediaType="ebook"
+                sort="release_date"
+              />
+            );
             break;
           case DiscoverSliderType.TMDB_MOVIE_KEYWORD:
             sliderComponent = (

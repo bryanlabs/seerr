@@ -151,6 +151,18 @@ const DiscoverSliderEdit = ({
         return intl.formatMessage(sliderTitles.upcomingtv);
       case DiscoverSliderType.NETWORKS:
         return intl.formatMessage(sliderTitles.networks);
+      case DiscoverSliderType.POPULAR_AUDIOBOOKS:
+        return intl.formatMessage(sliderTitles.popularaudiobooks);
+      case DiscoverSliderType.TRENDING_AUDIOBOOKS:
+        return intl.formatMessage(sliderTitles.trendingaudiobooks);
+      case DiscoverSliderType.NEW_AUDIOBOOKS:
+        return intl.formatMessage(sliderTitles.newaudiobooks);
+      case DiscoverSliderType.POPULAR_EBOOKS:
+        return intl.formatMessage(sliderTitles.popularebooks);
+      case DiscoverSliderType.TRENDING_EBOOKS:
+        return intl.formatMessage(sliderTitles.trendingebooks);
+      case DiscoverSliderType.NEW_EBOOKS:
+        return intl.formatMessage(sliderTitles.newebooks);
       case DiscoverSliderType.TMDB_MOVIE_KEYWORD:
         return intl.formatMessage(sliderTitles.tmdbmoviekeyword);
       case DiscoverSliderType.TMDB_TV_KEYWORD:

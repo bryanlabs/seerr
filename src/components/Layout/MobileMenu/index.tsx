@@ -4,22 +4,26 @@ import useClickOutside from '@app/hooks/useClickOutside';
 import { Permission, useUser } from '@app/hooks/useUser';
 import { Transition } from '@headlessui/react';
 import {
+  BookOpenIcon,
   ClockIcon,
   CogIcon,
   EllipsisHorizontalIcon,
   ExclamationTriangleIcon,
   EyeSlashIcon,
   FilmIcon,
+  MusicalNoteIcon,
   SparklesIcon,
   TvIcon,
   UsersIcon,
 } from '@heroicons/react/24/outline';
 import {
+  BookOpenIcon as FilledBookOpenIcon,
   ClockIcon as FilledClockIcon,
   CogIcon as FilledCogIcon,
   ExclamationTriangleIcon as FilledExclamationTriangleIcon,
   EyeSlashIcon as FilledEyeSlashIcon,
   FilmIcon as FilledFilmIcon,
+  MusicalNoteIcon as FilledMusicalNoteIcon,
   SparklesIcon as FilledSparklesIcon,
   TvIcon as FilledTvIcon,
   UsersIcon as FilledUsersIcon,
@@ -91,6 +95,20 @@ const MobileMenu = ({
       svgIcon: <TvIcon className="h-6 w-6" />,
       svgIconSelected: <FilledTvIcon className="h-6 w-6" />,
       activeRegExp: /^\/discover\/tv$/,
+    },
+    {
+      href: '/audiobooks',
+      content: intl.formatMessage(menuMessages.browseaudiobooks),
+      svgIcon: <MusicalNoteIcon className="h-6 w-6" />,
+      svgIconSelected: <FilledMusicalNoteIcon className="h-6 w-6" />,
+      activeRegExp: /^\/audiobooks/,
+    },
+    {
+      href: '/ebooks',
+      content: intl.formatMessage(menuMessages.browseebooks),
+      svgIcon: <BookOpenIcon className="h-6 w-6" />,
+      svgIconSelected: <FilledBookOpenIcon className="h-6 w-6" />,
+      activeRegExp: /^\/ebooks/,
     },
     {
       href: '/requests',

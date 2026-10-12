@@ -4,11 +4,13 @@ export interface GenreSliderItem {
   backdrops: string[];
 }
 
+import type { MediaType } from '@server/constants/media';
+
 export interface WatchlistItem {
   id: number;
   ratingKey: string;
   tmdbId: number;
-  mediaType: 'movie' | 'tv';
+  mediaType: MediaType;
   title: string;
 }
 

@@ -30,6 +30,8 @@ const defaultSettings = {
   locale: 'en',
   emailEnabled: false,
   newPlexLogin: true,
+  oidcEnabled: false,
+  oidcAutoLogin: false,
   youtubeUrl: '',
   plexClientIdentifier: '',
 };

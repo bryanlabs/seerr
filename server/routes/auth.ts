@@ -15,11 +15,290 @@ import { ApiError } from '@server/types/error';
 import { getAppVersion } from '@server/utils/appVersion';
 import { getHostname } from '@server/utils/getHostname';
 import axios from 'axios';
+import { randomBytes } from 'crypto';
 import { Router } from 'express';
+import type { Session, SessionData } from 'express-session';
+import gravatarUrl from 'gravatar-url';
 import net from 'net';
 import validator from 'validator';
 
 const authRoutes = Router();
+
+interface OidcDiscovery {
+  authorization_endpoint: string;
+  token_endpoint: string;
+  userinfo_endpoint: string;
+}
+
+interface OidcTokenResponse {
+  access_token?: string;
+}
+
+interface OidcUserInfo {
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  preferred_username?: string;
+  picture?: string;
+}
+
+let oidcDiscoveryCache: OidcDiscovery | undefined;
+
+const normalizeIssuer = (issuer: string): string =>
+  issuer.endsWith('/') ? issuer : `${issuer}/`;
+
+const isOidcEnabled = (): boolean =>
+  process.env.OIDC_ENABLED?.toLowerCase() === 'true';
+
+const getOidcConfig = () => {
+  if (!isOidcEnabled()) {
+    return undefined;
+  }
+
+  const issuer = process.env.OIDC_ISSUER_URL;
+  const clientId = process.env.OIDC_CLIENT_ID;
+  const clientSecret = process.env.OIDC_CLIENT_SECRET;
+  const redirectUri = process.env.OIDC_REDIRECT_URI;
+
+  if (!issuer || !clientId || !clientSecret || !redirectUri) {
+    throw new Error('OIDC is enabled but missing required configuration.');
+  }
+
+  return {
+    issuer: normalizeIssuer(issuer),
+    clientId,
+    clientSecret,
+    redirectUri,
+    scopes: process.env.OIDC_SCOPES || 'openid email profile',
+  };
+};
+
+const getOidcDiscovery = async (): Promise<OidcDiscovery> => {
+  if (oidcDiscoveryCache) {
+    return oidcDiscoveryCache;
+  }
+
+  const config = getOidcConfig();
+  if (!config) {
+    throw new Error('OIDC is not enabled.');
+  }
+
+  const discoveryUrl =
+    process.env.OIDC_DISCOVERY_URL ||
+    `${config.issuer}.well-known/openid-configuration`;
+  const response = await axios.get<OidcDiscovery>(discoveryUrl);
+  oidcDiscoveryCache = response.data;
+  return oidcDiscoveryCache;
+};
+
+const getSafeNextPath = (next?: unknown): string => {
+  if (typeof next !== 'string') {
+    return '/';
+  }
+  return next.startsWith('/') && !next.startsWith('//') ? next : '/';
+};
+
+const randomToken = (): string => randomBytes(32).toString('base64url');
+
+const clearOidcSessionState = (
+  session: Session & Partial<SessionData>
+): void => {
+  delete session.oidcState;
+  delete session.oidcNonce;
+  delete session.oidcNext;
+};
+
+authRoutes.get('/oidc/login', async (req, res, next) => {
+  try {
+    const config = getOidcConfig();
+    if (!config) {
+      return next({
+        status: 404,
+        message: 'OIDC sign-in is not enabled.',
+      });
+    }
+
+    if (!req.session) {
+      return next({
+        status: 500,
+        message: 'Session is not available.',
+      });
+    }
+
+    const discovery = await getOidcDiscovery();
+    const state = randomToken();
+    const nonce = randomToken();
+    req.session.oidcState = state;
+    req.session.oidcNonce = nonce;
+    req.session.oidcNext = getSafeNextPath(req.query.next);
+
+    const authorizationUrl = new URL(discovery.authorization_endpoint);
+    authorizationUrl.searchParams.set('response_type', 'code');
+    authorizationUrl.searchParams.set('client_id', config.clientId);
+    authorizationUrl.searchParams.set('redirect_uri', config.redirectUri);
+    authorizationUrl.searchParams.set('scope', config.scopes);
+    authorizationUrl.searchParams.set('state', state);
+    authorizationUrl.searchParams.set('nonce', nonce);
+
+    return res.redirect(authorizationUrl.toString());
+  } catch (e) {
+    logger.error('Something went wrong starting OIDC authentication', {
+      label: 'API',
+      errorMessage: e.message,
+      ip: req.ip,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to start OIDC authentication.',
+    });
+  }
+});
+
+authRoutes.get('/oidc/callback', async (req, res, next) => {
+  try {
+    const config = getOidcConfig();
+    if (!config) {
+      return next({
+        status: 404,
+        message: 'OIDC sign-in is not enabled.',
+      });
+    }
+
+    if (!req.session) {
+      return next({
+        status: 500,
+        message: 'Session is not available.',
+      });
+    }
+
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    if (!code || !state || state !== req.session.oidcState) {
+      if (req.session.userId) {
+        const nextPath = getSafeNextPath(req.session.oidcNext);
+        clearOidcSessionState(req.session);
+        logger.warn('Redirecting already-authenticated OIDC callback', {
+          label: 'API',
+          ip: req.ip,
+          userId: req.session.userId,
+        });
+        return res.redirect(nextPath);
+      }
+
+      logger.warn('Rejected OIDC callback with invalid state', {
+        label: 'API',
+        ip: req.ip,
+      });
+      return next({
+        status: 403,
+        message: 'Invalid authentication state.',
+      });
+    }
+
+    const discovery = await getOidcDiscovery();
+    const tokenBody = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: config.redirectUri,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+    });
+    const tokenResponse = await axios.post<OidcTokenResponse>(
+      discovery.token_endpoint,
+      tokenBody.toString(),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    if (!tokenResponse.data.access_token) {
+      throw new Error('OIDC token response did not include an access token.');
+    }
+
+    const profileResponse = await axios.get<OidcUserInfo>(
+      discovery.userinfo_endpoint,
+      {
+        headers: {
+          Authorization: `Bearer ${tokenResponse.data.access_token}`,
+        },
+      }
+    );
+    const profile = profileResponse.data;
+    const email = profile.email?.toLowerCase();
+    if (!email || !validator.isEmail(email, { require_tld: false })) {
+      throw new Error('OIDC profile did not include a valid email address.');
+    }
+    if (profile.email_verified === false) {
+      return next({
+        status: 403,
+        message: 'OIDC email address is not verified.',
+      });
+    }
+
+    const userRepository = getRepository(User);
+    const settings = getSettings();
+    let user = await userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      const permissions =
+        (await userRepository.count()) === 0
+          ? Permission.ADMIN
+          : settings.main.defaultPermissions;
+      user = new User({
+        email,
+        username: profile.preferred_username || profile.name || email,
+        avatar:
+          profile.picture ||
+          gravatarUrl(email, {
+            default: 'mm',
+            size: 200,
+          }),
+        permissions,
+        plexToken: '',
+        userType: UserType.LOCAL,
+      });
+      await userRepository.save(user);
+    } else {
+      let changed = false;
+      if (!user.username && (profile.preferred_username || profile.name)) {
+        user.username = profile.preferred_username || profile.name;
+        changed = true;
+      }
+      if (!user.avatar && profile.picture) {
+        user.avatar = profile.picture;
+        changed = true;
+      }
+      if (changed) {
+        await userRepository.save(user);
+      }
+    }
+
+    req.session.userId = user.id;
+    const nextPath = getSafeNextPath(req.session.oidcNext);
+    clearOidcSessionState(req.session);
+
+    logger.info('Authenticated Seerr user with OIDC', {
+      label: 'API',
+      ip: req.ip,
+      email,
+      userId: user.id,
+    });
+
+    return res.redirect(nextPath);
+  } catch (e) {
+    logger.error('Something went wrong authenticating with OIDC', {
+      label: 'API',
+      errorMessage: e.message,
+      ip: req.ip,
+    });
+    return next({
+      status: 500,
+      message: 'Unable to authenticate.',
+    });
+  }
+});
 
 authRoutes.get('/me', isAuthenticated(), async (req, res) => {
   const userRepository = getRepository(User);

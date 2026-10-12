@@ -19,6 +19,37 @@ const emailMock = mock.method(PreparedEmail.prototype, 'send', async () => {
 
 let app: Express;
 
+async function withOidcEnv(callback: () => Promise<void>) {
+  const keys = [
+    'OIDC_ENABLED',
+    'OIDC_ISSUER_URL',
+    'OIDC_CLIENT_ID',
+    'OIDC_CLIENT_SECRET',
+    'OIDC_REDIRECT_URI',
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+
+  process.env.OIDC_ENABLED = 'true';
+  process.env.OIDC_ISSUER_URL = 'https://auth.example.com/application/o/seerr/';
+  process.env.OIDC_CLIENT_ID = 'seerr';
+  process.env.OIDC_CLIENT_SECRET = 'secret';
+  process.env.OIDC_REDIRECT_URI =
+    'https://seerr.example.com/auth/oidc/callback';
+
+  try {
+    await callback();
+  } finally {
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -230,6 +261,32 @@ describe('POST /auth/logout', () => {
     // Session should be invalidated — /me should fail
     const meAfterRes = await agent.get('/auth/me');
     assert.strictEqual(meAfterRes.status, 403);
+  });
+});
+
+describe('GET /auth/oidc/callback', () => {
+  it('rejects invalid state when not authenticated', async () => {
+    await withOidcEnv(async () => {
+      const res = await request(app).get(
+        '/auth/oidc/callback?code=test-code&state=bad-state'
+      );
+
+      assert.strictEqual(res.status, 403);
+      assert.strictEqual(res.body.message, 'Invalid authentication state.');
+    });
+  });
+
+  it('redirects an already authenticated user away from stale invalid callback URLs', async () => {
+    await withOidcEnv(async () => {
+      const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+      const res = await agent.get(
+        '/auth/oidc/callback?code=test-code&state=bad-state'
+      );
+
+      assert.strictEqual(res.status, 302);
+      assert.strictEqual(res.headers.location, '/');
+    });
   });
 });
 

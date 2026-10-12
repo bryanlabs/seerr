@@ -975,7 +975,7 @@ discoverRoutes.get<Record<string, unknown>, WatchlistResponse>(
         id: item.tmdbId,
         ratingKey: item.ratingKey,
         title: item.title,
-        mediaType: item.type === 'show' ? 'tv' : 'movie',
+        mediaType: (item.type === 'show' ? 'tv' : 'movie') as MediaType,
         tmdbId: item.tmdbId,
       })),
     });

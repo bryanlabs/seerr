@@ -1,4 +1,3 @@
-import GithubAPI from '@server/api/github';
 import PushoverAPI from '@server/api/pushover';
 import TheMovieDb from '@server/api/themoviedb';
 import type {
@@ -11,7 +10,11 @@ import type { StatusResponse } from '@server/interfaces/api/settingsInterfaces';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
-import { checkUser, isAuthenticated } from '@server/middleware/auth';
+import {
+  checkUser,
+  isAuthenticated,
+  restrictScopedApiKey,
+} from '@server/middleware/auth';
 import deprecatedRoute from '@server/middleware/deprecation';
 import { mapProductionCompany } from '@server/models/Movie';
 import { mapNetwork } from '@server/models/Tv';
@@ -28,10 +31,12 @@ import { getAppVersion, getCommitTag } from '@server/utils/appVersion';
 import restartFlag from '@server/utils/restartFlag';
 import { isPerson } from '@server/utils/typeHelpers';
 import { Router } from 'express';
+import audiobookRoutes from './audiobook';
 import authRoutes from './auth';
 import blocklistRoutes from './blocklist';
 import collectionRoutes from './collection';
 import discoverRoutes, { createTmdbWithRegionLanguage } from './discover';
+import ebookRoutes from './ebook';
 import issueRoutes from './issue';
 import issueCommentRoutes from './issueComment';
 import mediaRoutes from './media';
@@ -46,51 +51,17 @@ import user from './user';
 const router = Router();
 
 router.use(checkUser);
+router.use(restrictScopedApiKey);
 
-router.get<unknown, StatusResponse>('/status', async (req, res) => {
-  const githubApi = new GithubAPI();
-
-  const currentVersion = getAppVersion();
-  const commitTag = getCommitTag();
-  let updateAvailable = false;
-  let commitsBehind = 0;
-
-  if (currentVersion.startsWith('develop-') && commitTag !== 'local') {
-    const commits = await githubApi.getSeerrCommits();
-
-    if (commits.length) {
-      const filteredCommits = commits.filter(
-        (commit) => !commit.commit.message.includes('[skip ci]')
-      );
-      if (filteredCommits[0].sha !== commitTag) {
-        updateAvailable = true;
-      }
-
-      const commitIndex = filteredCommits.findIndex(
-        (commit) => commit.sha === commitTag
-      );
-
-      if (updateAvailable) {
-        commitsBehind = commitIndex;
-      }
-    }
-  } else if (commitTag !== 'local') {
-    const releases = await githubApi.getSeerrReleases();
-
-    if (releases.length) {
-      const latestVersion = releases[0];
-
-      if (!latestVersion.name.includes(currentVersion)) {
-        updateAvailable = true;
-      }
-    }
-  }
-
+router.get<unknown, StatusResponse>('/status', async (_req, res) => {
+  // Bryanlabs fork: we don't track upstream Seerr releases, so the
+  // upstream-update check is disabled. Always report up-to-date so the UI
+  // doesn't surface a yellow "Out of Date" badge.
   return res.status(200).json({
     version: getAppVersion(),
     commitTag: getCommitTag(),
-    updateAvailable,
-    commitsBehind,
+    updateAvailable: false,
+    commitsBehind: 0,
     restartRequired: restartFlag.isSet(),
   });
 });
@@ -165,6 +136,8 @@ router.use(
 );
 router.use('/movie', isAuthenticated(), movieRoutes);
 router.use('/tv', isAuthenticated(), tvRoutes);
+router.use('/audiobook', isAuthenticated(), audiobookRoutes);
+router.use('/ebook', isAuthenticated(), ebookRoutes);
 router.use('/media', isAuthenticated(), mediaRoutes);
 router.use('/person', isAuthenticated(), personRoutes);
 router.use('/collection', isAuthenticated(), collectionRoutes);

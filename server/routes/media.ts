@@ -1,3 +1,4 @@
+import BookshelfAPI from '@server/api/servarr/bookshelf';
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import TautulliAPI from '@server/api/tautulli';
@@ -278,6 +279,60 @@ mediaRoutes.delete(
         await (service as SonarrAPI).removeSeries(tvdbId);
       }
 
+      return res.status(204).send();
+    } catch (e) {
+      logger.error('Something went wrong fetching media in delete request', {
+        label: 'Media',
+        message: e.message,
+      });
+      next({ status: 404, message: 'Media not found' });
+    }
+  }
+);
+
+// Bookshelf book file delete: removes the book from the configured
+// Bookshelf instance. Used by the admin "Delete from Bookshelf" action on
+// the book detail page.
+mediaRoutes.delete(
+  '/:id/bookfile',
+  isAuthenticated(Permission.MANAGE_REQUESTS),
+  async (req, res, next) => {
+    try {
+      const settings = getSettings();
+      const mediaRepository = getRepository(Media);
+      const media = await mediaRepository.findOneOrFail({
+        where: { id: Number(req.params.id) },
+      });
+
+      if (
+        media.mediaType !== MediaType.AUDIOBOOK &&
+        media.mediaType !== MediaType.EBOOK
+      ) {
+        return next({
+          status: 400,
+          message: 'Endpoint only valid for book media types',
+        });
+      }
+
+      const server = settings.bookshelf.find((b) => b.id === media.serviceId);
+      if (!server) {
+        return next({
+          status: 404,
+          message: 'No Bookshelf instance recorded for this media',
+        });
+      }
+      if (!media.externalServiceId) {
+        return next({
+          status: 404,
+          message: 'No Bookshelf book id recorded for this media',
+        });
+      }
+
+      const client = new BookshelfAPI({
+        apiKey: server.apiKey,
+        url: BookshelfAPI.buildUrl(server, '/api/v1'),
+      });
+      await client.removeBook(media.externalServiceId);
       return res.status(204).send();
     } catch (e) {
       logger.error('Something went wrong fetching media in delete request', {

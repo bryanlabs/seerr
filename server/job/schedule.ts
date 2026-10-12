@@ -1,7 +1,9 @@
 import { MediaServerType } from '@server/constants/server';
 import blocklistedTagsProcessor from '@server/job/blocklistedTagsProcessor';
 import availabilitySync from '@server/lib/availabilitySync';
+import bookshelfSync from '@server/lib/bookshelfSync';
 import downloadTracker from '@server/lib/downloadtracker';
+import hardcoverWatchlistSync from '@server/lib/hardcoverWatchlistSync';
 import ImageProxy from '@server/lib/imageproxy';
 import refreshToken from '@server/lib/refreshToken';
 import {
@@ -207,6 +209,50 @@ export const startJobs = (): void => {
       });
       downloadTracker.updateDownloads();
     }),
+  });
+
+  // Bookshelf availability sync — polls Bookshelf for completed grabs and
+  // flips Media.status to AVAILABLE so MEDIA_AVAILABLE notifications fire.
+  scheduledJobs.push({
+    id: 'bookshelf-sync',
+    name: 'Bookshelf Sync',
+    type: 'process',
+    interval: 'minutes',
+    cronSchedule: jobs['bookshelf-sync']?.schedule ?? '0 */5 * * * *',
+    job: schedule.scheduleJob(
+      jobs['bookshelf-sync']?.schedule ?? '0 */5 * * * *',
+      () => {
+        logger.debug('Starting scheduled job: Bookshelf Sync', {
+          label: 'Jobs',
+        });
+        bookshelfSync.run();
+      }
+    ),
+    running: () => bookshelfSync.status().running,
+    cancelFn: () => bookshelfSync.cancel(),
+  });
+
+  // Hardcover Want-to-Read sync — for users who set hardcoverUsername +
+  // autoRequestAudiobooks/Ebooks, fetches their want-to-read list and creates
+  // requests for new entries (scoped to the matching user).
+  scheduledJobs.push({
+    id: 'hardcover-watchlist-sync',
+    name: 'Hardcover Watchlist Sync',
+    type: 'process',
+    interval: 'minutes',
+    cronSchedule:
+      jobs['hardcover-watchlist-sync']?.schedule ?? '*/60 * * * * *',
+    job: schedule.scheduleJob(
+      jobs['hardcover-watchlist-sync']?.schedule ?? '*/60 * * * * *',
+      () => {
+        logger.debug('Starting scheduled job: Hardcover Watchlist Sync', {
+          label: 'Jobs',
+        });
+        hardcoverWatchlistSync.run();
+      }
+    ),
+    running: () => hardcoverWatchlistSync.status().running,
+    cancelFn: () => hardcoverWatchlistSync.cancel(),
   });
 
   // Reset download sync everyday at 01:00 am
