@@ -303,19 +303,26 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     return [...requestedSeasons, ...availableSeasons];
   };
 
-  const showHasSpecials = data.seasons.some(
-    (season) =>
-      season.seasonNumber === 0 &&
-      settings.currentSettings.enableSpecialEpisodes
-  );
+  // Mirrors the season list the request modal offers, so the two agree.
+  const requestableSeasons = data.seasons
+    .filter(
+      (season) =>
+        season.episodeCount !== 0 &&
+        (settings.currentSettings.enableSpecialEpisodes ||
+          season.seasonNumber !== 0)
+    )
+    .map((season) => season.seasonNumber);
 
-  const isComplete =
-    (showHasSpecials ? seasonCount + 1 : seasonCount) <=
-    getAllRequestedSeasons(false).length;
+  const isSeasonSetComplete = (is4k: boolean) => {
+    const requested = getAllRequestedSeasons(is4k);
+    return requestableSeasons.every((seasonNumber) =>
+      requested.includes(seasonNumber)
+    );
+  };
 
-  const is4kComplete =
-    (showHasSpecials ? seasonCount + 1 : seasonCount) <=
-    getAllRequestedSeasons(true).length;
+  const isComplete = isSeasonSetComplete(false);
+
+  const is4kComplete = isSeasonSetComplete(true);
 
   const streamingRegion = user?.settings?.streamingRegion
     ? user.settings.streamingRegion
