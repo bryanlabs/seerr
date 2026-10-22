@@ -393,6 +393,7 @@ export class User {
               : {}),
             type: MediaType.AUDIOBOOK,
             status: Not(MediaRequestStatus.DECLINED),
+            ignoreQuota: false,
           },
         })
       : 0;
@@ -413,6 +414,7 @@ export class User {
             ...(ebookQuotaDays ? { createdAt: AfterDate(ebookDate) } : {}),
             type: MediaType.EBOOK,
             status: Not(MediaRequestStatus.DECLINED),
+            ignoreQuota: false,
           },
         })
       : 0;

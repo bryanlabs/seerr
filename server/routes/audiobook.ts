@@ -8,6 +8,7 @@ import {
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
+import { User } from '@server/entity/User';
 import { Permission } from '@server/lib/permissions';
 import type { BookshelfSettings } from '@server/lib/settings';
 import { getSettings } from '@server/lib/settings';
@@ -16,6 +17,11 @@ import {
   mapHardcoverToBookDetails,
   mapHardcoverToBookSearchResult,
 } from '@server/models/Book';
+import requestLock, {
+  mediaKey,
+  mediaLock,
+  userKey,
+} from '@server/utils/requestLock';
 import { Router } from 'express';
 
 /**
@@ -266,6 +272,8 @@ audiobookRoutes.post('/request', async (req, res, next) => {
     serverId,
     rootFolder,
     tags,
+    userId,
+    ignoreQuota,
   } = req.body as {
     foreignBookId?: string;
     foreignAuthorId?: string;
@@ -275,6 +283,8 @@ audiobookRoutes.post('/request', async (req, res, next) => {
     serverId?: number;
     rootFolder?: string;
     tags?: number[];
+    userId?: number;
+    ignoreQuota?: boolean;
   };
 
   if (!foreignBookId) {
@@ -288,6 +298,25 @@ audiobookRoutes.post('/request', async (req, res, next) => {
   }
   if (!req.user) {
     return next({ status: 401, message: 'Authentication required' });
+  }
+  if (
+    userId &&
+    userId !== req.user.id &&
+    !req.user.hasPermission([
+      Permission.MANAGE_USERS,
+      Permission.MANAGE_REQUESTS,
+    ])
+  ) {
+    return next({
+      status: 403,
+      message: 'You do not have permission to modify the request user.',
+    });
+  }
+  if (ignoreQuota && !req.user.hasPermission(Permission.MANAGE_REQUESTS)) {
+    return next({
+      status: 403,
+      message: 'You do not have permission to bypass user quota limits.',
+    });
   }
 
   const server =
@@ -313,81 +342,99 @@ audiobookRoutes.post('/request', async (req, res, next) => {
   const requestRepository = getRepository(MediaRequest);
 
   try {
-    let media = await mediaRepository.findOne({
-      where: { tmdbId, mediaType: MediaType.AUDIOBOOK },
-      relations: ['requests'],
-    });
-    if (!media) {
-      media = new Media({
-        tmdbId,
-        mediaType: MediaType.AUDIOBOOK,
-        status: MediaStatus.PENDING,
-      });
-    } else if (media.status === MediaStatus.BLOCKLISTED) {
-      return next({ status: 403, message: 'This book is blocklisted' });
+    const requestUser =
+      userId && userId !== req.user.id
+        ? await getRepository(User).findOne({ where: { id: userId } })
+        : req.user;
+    if (!requestUser) {
+      return next({ status: 404, message: 'User not found' });
     }
-    await mediaRepository.save(media);
+    const actingUser = req.user;
 
-    // Don't create a duplicate request if one is already in flight
-    const existing = (media.requests ?? []).find(
-      (r) =>
-        r.status === MediaRequestStatus.PENDING ||
-        r.status === MediaRequestStatus.APPROVED
+    // Same per-user then per-title order as movie and tv requests, so a
+    // double submit or two users requesting one book cannot both insert
+    return await requestLock.dispatch(userKey(requestUser.id), () =>
+      mediaLock.dispatch(mediaKey(MediaType.AUDIOBOOK, tmdbId), async () => {
+        let media = await mediaRepository.findOne({
+          where: { tmdbId, mediaType: MediaType.AUDIOBOOK },
+          relations: ['requests'],
+        });
+        if (!media) {
+          media = new Media({
+            tmdbId,
+            mediaType: MediaType.AUDIOBOOK,
+            status: MediaStatus.PENDING,
+          });
+        } else if (media.status === MediaStatus.BLOCKLISTED) {
+          return next({ status: 403, message: 'This book is blocklisted' });
+        }
+        await mediaRepository.save(media);
+
+        // Don't create a duplicate request if one is already in flight
+        const existing = (media.requests ?? []).find(
+          (r) =>
+            r.status === MediaRequestStatus.PENDING ||
+            r.status === MediaRequestStatus.APPROVED
+        );
+        if (existing) {
+          return res.status(202).json({
+            message: 'Request already exists',
+            request: {
+              ...existing,
+              requestedBy: existing.requestedBy?.filter(),
+              modifiedBy: existing.modifiedBy?.filter(),
+            },
+            media: media.filter(actingUser),
+          });
+        }
+
+        const quotas = await requestUser.getQuota();
+        const bypassQuota = !!ignoreQuota && (quotas.audiobook.limit ?? 0) > 0;
+        if (!bypassQuota && quotas.audiobook.restricted) {
+          return next({
+            status: 403,
+            message: 'Audiobook request quota exceeded',
+          });
+        }
+
+        const autoApprove = actingUser.hasPermission(
+          [Permission.AUTO_APPROVE, Permission.MANAGE_REQUESTS],
+          { type: 'or' }
+        );
+
+        const request = new MediaRequest({
+          type: MediaType.AUDIOBOOK,
+          media,
+          requestedBy: requestUser,
+          status: autoApprove
+            ? MediaRequestStatus.APPROVED
+            : MediaRequestStatus.PENDING,
+          modifiedBy: autoApprove ? actingUser : undefined,
+          is4k: false,
+          serverId: server.id,
+          profileId: profileId ?? server.activeProfileId,
+          languageProfileId:
+            metadataProfileId ?? server.activeMetadataProfileId,
+          rootFolder: rootFolder ?? server.activeDirectory,
+          tags: tags ?? [],
+          isAutoRequest: false,
+          ignoreQuota: bypassQuota,
+        });
+
+        // MediaRequestSubscriber.afterInsert/afterUpdate will fire sendToBookshelf
+        // when status is APPROVED, which performs the Bookshelf addBook and
+        // updates Media.status accordingly. Mirrors the Radarr/Sonarr flow.
+        await requestRepository.save(request);
+
+        return res.status(201).json({
+          request,
+          media: media.filter(actingUser),
+          message: autoApprove
+            ? 'Request approved; Bookshelf will pick it up shortly'
+            : 'Request pending admin approval',
+        });
+      })
     );
-    if (existing) {
-      return res.status(202).json({
-        message: 'Request already exists',
-        request: {
-          ...existing,
-          requestedBy: existing.requestedBy?.filter(),
-          modifiedBy: existing.modifiedBy?.filter(),
-        },
-        media: media.filter(req.user),
-      });
-    }
-
-    const quotas = await req.user.getQuota();
-    if (quotas.audiobook.restricted) {
-      return next({
-        status: 403,
-        message: 'Audiobook request quota exceeded',
-      });
-    }
-
-    const autoApprove = req.user.hasPermission(
-      [Permission.AUTO_APPROVE, Permission.MANAGE_REQUESTS],
-      { type: 'or' }
-    );
-
-    const request = new MediaRequest({
-      type: MediaType.AUDIOBOOK,
-      media,
-      requestedBy: req.user,
-      status: autoApprove
-        ? MediaRequestStatus.APPROVED
-        : MediaRequestStatus.PENDING,
-      modifiedBy: autoApprove ? req.user : undefined,
-      is4k: false,
-      serverId: server.id,
-      profileId: profileId ?? server.activeProfileId,
-      languageProfileId: metadataProfileId ?? server.activeMetadataProfileId,
-      rootFolder: rootFolder ?? server.activeDirectory,
-      tags: tags ?? [],
-      isAutoRequest: false,
-    });
-
-    // MediaRequestSubscriber.afterInsert/afterUpdate will fire sendToBookshelf
-    // when status is APPROVED, which performs the Bookshelf addBook and
-    // updates Media.status accordingly. Mirrors the Radarr/Sonarr flow.
-    await requestRepository.save(request);
-
-    return res.status(201).json({
-      request,
-      media: media.filter(req.user),
-      message: autoApprove
-        ? 'Request approved; Bookshelf will pick it up shortly'
-        : 'Request pending admin approval',
-    });
   } catch (e) {
     logger.error('Audiobook request flow failed', {
       label: 'API',
