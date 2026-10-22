@@ -27,6 +27,11 @@ const StatusChecker = () => {
     refreshInterval: 60 * 1000,
   });
   const [alertDismissed, setAlertDismissed] = useState(false);
+  const clientCommitTag = process.env.commitTag ?? '';
+  const commitTagChanged =
+    !!data?.commitTag &&
+    !!clientCommitTag &&
+    data.commitTag !== clientCommitTag;
 
   useEffect(() => {
     if (!data?.restartRequired) {
@@ -55,7 +60,7 @@ const StatusChecker = () => {
       show={
         !alertDismissed &&
         ((hasPermission(Permission.ADMIN) && data.restartRequired) ||
-          data.commitTag !== process.env.commitTag)
+          commitTagChanged)
       }
     >
       {hasPermission(Permission.ADMIN) && data.restartRequired ? (
@@ -64,7 +69,7 @@ const StatusChecker = () => {
           backgroundClickable={false}
           onOk={() => {
             setAlertDismissed(true);
-            if (data.commitTag !== process.env.commitTag) {
+            if (commitTagChanged) {
               location.reload();
             }
           }}

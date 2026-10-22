@@ -72,6 +72,15 @@ export class UserSettings {
   @Column({ nullable: true })
   public watchlistSyncTv?: boolean;
 
+  @Column({ nullable: true })
+  public hardcoverUsername?: string;
+
+  @Column({ nullable: true })
+  public autoRequestAudiobooks?: boolean;
+
+  @Column({ nullable: true })
+  public autoRequestEbooks?: boolean;
+
   @Column({
     type: 'text',
     nullable: true,

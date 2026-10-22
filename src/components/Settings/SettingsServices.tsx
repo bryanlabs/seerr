@@ -6,6 +6,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
+import BookshelfModal from '@app/components/Settings/BookshelfModal';
 import OverrideRuleModal from '@app/components/Settings/OverrideRule/OverrideRuleModal';
 import OverrideRuleTiles from '@app/components/Settings/OverrideRule/OverrideRuleTiles';
 import RadarrModal from '@app/components/Settings/RadarrModal';
@@ -13,10 +14,15 @@ import SonarrModal from '@app/components/Settings/SonarrModal';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
+import { BookOpenIcon } from '@heroicons/react/24/outline';
 import { PencilIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/solid';
 import type OverrideRule from '@server/entity/OverrideRule';
 import type { OverrideRuleResultsResponse } from '@server/interfaces/api/overrideRuleInterfaces';
-import type { RadarrSettings, SonarrSettings } from '@server/lib/settings';
+import type {
+  BookshelfSettings,
+  RadarrSettings,
+  SonarrSettings,
+} from '@server/lib/settings';
 import axios from 'axios';
 import { Fragment, useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -45,6 +51,15 @@ const messages = defineMessages('components.Settings', {
     'A 4K {serverType} server must be marked as default in order to enable users to submit 4K {mediaType} requests.',
   mediaTypeMovie: 'movie',
   mediaTypeSeries: 'series',
+  bookshelfsettings: 'Bookshelf Settings',
+  bookshelfDescription:
+    'Configure your Bookshelf (Readarr fork) instances below. One server should be marked default per media type (audiobook or ebook).',
+  addbookshelf: 'Add Bookshelf Server',
+  bookshelfMediaType: 'Type',
+  noDefaultBookshelf:
+    'At least one Bookshelf server must be marked as default per media type for {mediaType} requests to be processed.',
+  bookshelfAudiobook: 'audiobook',
+  bookshelfEbook: 'ebook',
   deleteServer: 'Delete {serverType} Server',
   overrideRules: 'Override Rules',
   overrideRulesDescription:
@@ -215,6 +230,11 @@ const SettingsServices = () => {
     error: sonarrError,
     mutate: revalidateSonarr,
   } = useSWR<SonarrSettings[]>('/api/v1/settings/sonarr');
+  const {
+    data: bookshelfData,
+    error: bookshelfError,
+    mutate: revalidateBookshelf,
+  } = useSWR<BookshelfSettings[]>('/api/v1/settings/bookshelf');
   const { data: rules, mutate: revalidate } =
     useSWR<OverrideRuleResultsResponse>('/api/v1/overrideRule');
   const [editRadarrModal, setEditRadarrModal] = useState<{
@@ -231,9 +251,16 @@ const SettingsServices = () => {
     open: false,
     sonarr: null,
   });
+  const [editBookshelfModal, setEditBookshelfModal] = useState<{
+    open: boolean;
+    bookshelf: BookshelfSettings | null;
+  }>({
+    open: false,
+    bookshelf: null,
+  });
   const [deleteServerModal, setDeleteServerModal] = useState<{
     open: boolean;
-    type: 'radarr' | 'sonarr';
+    type: 'radarr' | 'sonarr' | 'bookshelf';
     serverId: number | null;
   }>({
     open: false,
@@ -255,6 +282,7 @@ const SettingsServices = () => {
     setDeleteServerModal({ open: false, serverId: null, type: 'radarr' });
     revalidateRadarr();
     revalidateSonarr();
+    revalidateBookshelf();
     mutate('/api/v1/settings/public');
   };
 
@@ -304,6 +332,19 @@ const SettingsServices = () => {
           }}
         />
       )}
+      {editBookshelfModal.open && (
+        <BookshelfModal
+          bookshelf={editBookshelfModal.bookshelf}
+          onClose={() => {
+            setEditBookshelfModal({ open: false, bookshelf: null });
+          }}
+          onSave={() => {
+            revalidateBookshelf();
+            mutate('/api/v1/settings/public');
+            setEditBookshelfModal({ open: false, bookshelf: null });
+          }}
+        />
+      )}
       <Transition
         as={Fragment}
         show={deleteServerModal.open}
@@ -327,7 +368,11 @@ const SettingsServices = () => {
           }
           title={intl.formatMessage(messages.deleteServer, {
             serverType:
-              deleteServerModal.type === 'radarr' ? 'Radarr' : 'Sonarr',
+              deleteServerModal.type === 'radarr'
+                ? 'Radarr'
+                : deleteServerModal.type === 'sonarr'
+                  ? 'Sonarr'
+                  : 'Bookshelf',
           })}
         >
           {intl.formatMessage(messages.deleteserverconfirm)}
@@ -492,6 +537,137 @@ const SettingsServices = () => {
                   >
                     <PlusIcon />
                     <span>{intl.formatMessage(messages.addsonarr)}</span>
+                  </Button>
+                </div>
+              </li>
+            </ul>
+          </>
+        )}
+      </div>
+      <div className="mb-6 mt-10">
+        <h3 className="heading">
+          {intl.formatMessage(messages.bookshelfsettings)}
+        </h3>
+        <p className="description">
+          {intl.formatMessage(messages.bookshelfDescription)}
+        </p>
+      </div>
+      <div className="section">
+        {!bookshelfData && !bookshelfError && <LoadingSpinner />}
+        {bookshelfData && !bookshelfError && (
+          <>
+            {bookshelfData.length > 0 &&
+              (['audiobook', 'ebook'] as const).map(
+                (mt) =>
+                  bookshelfData.some((b) => b.mediaType === mt) &&
+                  !bookshelfData.some(
+                    (b) => b.mediaType === mt && b.isDefault
+                  ) && (
+                    <Alert
+                      key={`bookshelf-no-default-${mt}`}
+                      title={intl.formatMessage(messages.noDefaultBookshelf, {
+                        mediaType: intl.formatMessage(
+                          mt === 'audiobook'
+                            ? messages.bookshelfAudiobook
+                            : messages.bookshelfEbook
+                        ),
+                      })}
+                    />
+                  )
+              )}
+            <ul className="grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+              {bookshelfData.map((b) => (
+                <li
+                  key={`bookshelf-config-${b.id}`}
+                  className="col-span-1 rounded-lg bg-gray-800 shadow ring-1 ring-gray-500"
+                >
+                  <div className="flex w-full items-center justify-between space-x-6 p-6">
+                    <div className="flex-1 truncate">
+                      <div className="mb-2 flex items-center space-x-2">
+                        <h3 className="truncate font-medium leading-5 text-white">
+                          {b.name}
+                        </h3>
+                        {b.isDefault && (
+                          <Badge>{intl.formatMessage(messages.default)}</Badge>
+                        )}
+                        <Badge badgeType="warning">
+                          {intl.formatMessage(
+                            b.mediaType === 'audiobook'
+                              ? messages.bookshelfAudiobook
+                              : messages.bookshelfEbook
+                          )}
+                        </Badge>
+                        {b.useSsl && (
+                          <Badge badgeType="success">
+                            {intl.formatMessage(messages.ssl)}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-sm leading-5 text-gray-300">
+                        <span className="mr-2 font-bold">
+                          {intl.formatMessage(messages.address)}
+                        </span>
+                        {(b.useSsl ? 'https://' : 'http://') +
+                          b.hostname +
+                          ':' +
+                          b.port}
+                      </p>
+                      <p className="mt-1 truncate text-sm leading-5 text-gray-300">
+                        <span className="mr-2 font-bold">
+                          {intl.formatMessage(messages.activeProfile)}
+                        </span>
+                        {b.activeProfileName}
+                      </p>
+                    </div>
+                    <BookOpenIcon className="h-10 w-10 flex-shrink-0 text-gray-400" />
+                  </div>
+                  <div className="border-t border-gray-500">
+                    <div className="-mt-px flex">
+                      <div className="flex w-0 flex-1 border-r border-gray-500">
+                        <button
+                          onClick={() =>
+                            setEditBookshelfModal({
+                              open: true,
+                              bookshelf: b,
+                            })
+                          }
+                          className="focus:ring-blue relative -mr-px inline-flex w-0 flex-1 items-center justify-center rounded-bl-lg border border-transparent py-4 text-sm font-medium leading-5 text-gray-200 transition duration-150 ease-in-out hover:text-white focus:z-10 focus:border-gray-500 focus:outline-none"
+                        >
+                          <PencilIcon className="mr-2 h-5 w-5" />
+                          <span>{intl.formatMessage(globalMessages.edit)}</span>
+                        </button>
+                      </div>
+                      <div className="-ml-px flex w-0 flex-1">
+                        <button
+                          onClick={() =>
+                            setDeleteServerModal({
+                              open: true,
+                              serverId: b.id,
+                              type: 'bookshelf',
+                            })
+                          }
+                          className="focus:ring-blue relative inline-flex w-0 flex-1 items-center justify-center rounded-br-lg border border-transparent py-4 text-sm font-medium leading-5 text-gray-200 transition duration-150 ease-in-out hover:text-white focus:z-10 focus:border-gray-500 focus:outline-none"
+                        >
+                          <TrashIcon className="mr-2 h-5 w-5" />
+                          <span>
+                            {intl.formatMessage(globalMessages.delete)}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+              <li className="col-span-1 h-32 rounded-lg border-2 border-dashed border-gray-400 shadow sm:h-44">
+                <div className="flex h-full w-full items-center justify-center">
+                  <Button
+                    buttonType="ghost"
+                    onClick={() =>
+                      setEditBookshelfModal({ open: true, bookshelf: null })
+                    }
+                  >
+                    <PlusIcon />
+                    <span>{intl.formatMessage(messages.addbookshelf)}</span>
                   </Button>
                 </div>
               </li>

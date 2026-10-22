@@ -8,6 +8,7 @@ import Table from '@app/components/Common/Table';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
 
+import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { formatBytes } from '@app/utils/numberHelpers';
@@ -26,7 +27,6 @@ import { formatDuration, intervalToDuration } from 'date-fns';
 import { Fragment, useReducer, useState } from 'react';
 import type { MessageDescriptor } from 'react-intl';
 import { FormattedRelativeTime, useIntl } from 'react-intl';
-import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
@@ -88,6 +88,8 @@ const messages: { [messageName: string]: MessageDescriptor } = defineMessages(
     'sonarr-scan': 'Sonarr Scan',
     'download-sync': 'Download Sync',
     'download-sync-reset': 'Download Sync Reset',
+    'bookshelf-sync': 'Bookshelf Sync',
+    'hardcover-watchlist-sync': 'Hardcover Watchlist Sync',
     'image-cache-cleanup': 'Image Cache Cleanup',
     'process-blocklisted-tags': 'Process Blocklisted Tags',
     editJobSchedule: 'Modify Job',
@@ -582,33 +584,22 @@ const SettingsJobs = () => {
             </tr>
           </thead>
           <Table.TBody>
-            {cacheData?.apiCaches
-              ?.filter(
-                (cache) =>
-                  !(
-                    settings.currentSettings.mediaServerType !==
-                      MediaServerType.PLEX && cache.id === 'plexguid'
-                  )
-              )
-              .map((cache) => (
-                <tr key={`cache-list-${cache.id}`}>
-                  <Table.TD>{cache.name}</Table.TD>
-                  <Table.TD>{intl.formatNumber(cache.stats.hits)}</Table.TD>
-                  <Table.TD>{intl.formatNumber(cache.stats.misses)}</Table.TD>
-                  <Table.TD>{intl.formatNumber(cache.stats.keys)}</Table.TD>
-                  <Table.TD>{formatBytes(cache.stats.ksize)}</Table.TD>
-                  <Table.TD>{formatBytes(cache.stats.vsize)}</Table.TD>
-                  <Table.TD alignText="right">
-                    <Button
-                      buttonType="danger"
-                      onClick={() => flushCache(cache)}
-                    >
-                      <TrashIcon />
-                      <span>{intl.formatMessage(messages.flushcache)}</span>
-                    </Button>
-                  </Table.TD>
-                </tr>
-              ))}
+            {cacheData?.apiCaches?.map((cache) => (
+              <tr key={`cache-list-${cache.id}`}>
+                <Table.TD>{cache.name}</Table.TD>
+                <Table.TD>{intl.formatNumber(cache.stats.hits)}</Table.TD>
+                <Table.TD>{intl.formatNumber(cache.stats.misses)}</Table.TD>
+                <Table.TD>{intl.formatNumber(cache.stats.keys)}</Table.TD>
+                <Table.TD>{formatBytes(cache.stats.ksize)}</Table.TD>
+                <Table.TD>{formatBytes(cache.stats.vsize)}</Table.TD>
+                <Table.TD alignText="right">
+                  <Button buttonType="danger" onClick={() => flushCache(cache)}>
+                    <TrashIcon />
+                    <span>{intl.formatMessage(messages.flushcache)}</span>
+                  </Button>
+                </Table.TD>
+              </tr>
+            ))}
           </Table.TBody>
         </Table>
       </div>

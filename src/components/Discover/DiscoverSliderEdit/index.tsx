@@ -3,10 +3,11 @@ import SlideCheckbox from '@app/components/Common/SlideCheckbox';
 import Tag from '@app/components/Common/Tag';
 import Tooltip from '@app/components/Common/Tooltip';
 import CompanyTag from '@app/components/CompanyTag';
-import { sliderTitles } from '@app/components/Discover/constants';
 import CreateSlider from '@app/components/Discover/CreateSlider';
+import { sliderTitles } from '@app/components/Discover/constants';
 import GenreTag from '@app/components/GenreTag';
 import KeywordTag from '@app/components/KeywordTag';
+import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
@@ -24,7 +25,6 @@ import axios from 'axios';
 import { useRef, useState } from 'react';
 import { useDrag, useDrop } from 'react-aria';
 import { useIntl } from 'react-intl';
-import { useToasts } from 'react-toast-notifications';
 
 const messages = defineMessages('components.Discover.DiscoverSliderEdit', {
   deletesuccess: 'Sucessfully deleted slider.',
@@ -151,6 +151,18 @@ const DiscoverSliderEdit = ({
         return intl.formatMessage(sliderTitles.upcomingtv);
       case DiscoverSliderType.NETWORKS:
         return intl.formatMessage(sliderTitles.networks);
+      case DiscoverSliderType.POPULAR_AUDIOBOOKS:
+        return intl.formatMessage(sliderTitles.popularaudiobooks);
+      case DiscoverSliderType.TRENDING_AUDIOBOOKS:
+        return intl.formatMessage(sliderTitles.trendingaudiobooks);
+      case DiscoverSliderType.NEW_AUDIOBOOKS:
+        return intl.formatMessage(sliderTitles.newaudiobooks);
+      case DiscoverSliderType.POPULAR_EBOOKS:
+        return intl.formatMessage(sliderTitles.popularebooks);
+      case DiscoverSliderType.TRENDING_EBOOKS:
+        return intl.formatMessage(sliderTitles.trendingebooks);
+      case DiscoverSliderType.NEW_EBOOKS:
+        return intl.formatMessage(sliderTitles.newebooks);
       case DiscoverSliderType.TMDB_MOVIE_KEYWORD:
         return intl.formatMessage(sliderTitles.tmdbmoviekeyword);
       case DiscoverSliderType.TMDB_TV_KEYWORD:

@@ -20,6 +20,7 @@ import SeasonRequest from '@server/entity/SeasonRequest';
 import notificationManager, { Notification } from '@server/lib/notifications';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
+import { withNestedTransaction } from '@server/utils/nestedTransaction';
 import { isEqual, truncate } from 'lodash';
 import type {
   EntityManager,
@@ -180,13 +181,16 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
-  public async sendToRadarr(entity: MediaRequest): Promise<void> {
+  public async sendToRadarr(
+    entity: MediaRequest,
+    manager: EntityManager
+  ): Promise<void> {
     if (
       entity.status === MediaRequestStatus.APPROVED &&
       entity.type === MediaType.MOVIE
     ) {
       try {
-        const mediaRepository = getRepository(Media);
+        const mediaRepository = manager.getRepository(Media);
         const settings = getSettings();
         if (settings.radarr.length === 0 && !settings.radarr[0]) {
           logger.info(
@@ -280,13 +284,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           });
         }
 
-        const tmdb = new TheMovieDb();
-        const radarr = new RadarrAPI({
-          apiKey: radarrSettings.apiKey,
-          url: RadarrAPI.buildUrl(radarrSettings, '/api/v3'),
-        });
-        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
-
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
         });
@@ -299,6 +296,28 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           });
           return;
         }
+
+        if (
+          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
+        ) {
+          logger.warn('Media already exists, marking request as COMPLETED', {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaId: entity.media.id,
+          });
+
+          const requestRepository = manager.getRepository(MediaRequest);
+          entity.status = MediaRequestStatus.COMPLETED;
+          await requestRepository.save(entity);
+          return;
+        }
+
+        const tmdb = new TheMovieDb();
+        const radarr = new RadarrAPI({
+          apiKey: radarrSettings.apiKey,
+          url: RadarrAPI.buildUrl(radarrSettings, '/api/v3'),
+        });
+        const movie = await tmdb.getMovie({ movieId: entity.media.tmdbId });
 
         if (radarrSettings.tagRequests) {
           const radarrTags = await radarr.getTags();
@@ -345,21 +364,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           }
         }
 
-        if (
-          media[entity.is4k ? 'status4k' : 'status'] === MediaStatus.AVAILABLE
-        ) {
-          logger.warn('Media already exists, marking request as COMPLETED', {
-            label: 'Media Request',
-            requestId: entity.id,
-            mediaId: entity.media.id,
-          });
-
-          const requestRepository = getRepository(MediaRequest);
-          entity.status = MediaRequestStatus.COMPLETED;
-          await requestRepository.save(entity);
-          return;
-        }
-
         const radarrMovieOptions: RadarrMovieOptions = {
           profileId: qualityProfile,
           qualityProfileId: qualityProfile,
@@ -377,6 +381,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         radarr
           .addMovie(radarrMovieOptions)
           .then(async (radarrMovie) => {
+            // Needs its own repository as this runs detached from the request transaction
+            const mediaRepository = getRepository(Media);
             // We grab media again here to make sure we have the latest version of it
             const media = await mediaRepository.findOne({
               where: { id: entity.media.id },
@@ -444,8 +450,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           mediaId: entity.media.id,
         });
       } catch (e) {
-        const requestRepository = getRepository(MediaRequest);
-        const mediaRepository = getRepository(Media);
+        const requestRepository = manager.getRepository(MediaRequest);
+        const mediaRepository = manager.getRepository(Media);
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
         });
@@ -474,13 +480,16 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
-  public async sendToSonarr(entity: MediaRequest): Promise<void> {
+  public async sendToSonarr(
+    entity: MediaRequest,
+    manager: EntityManager
+  ): Promise<void> {
     if (
       entity.status === MediaRequestStatus.APPROVED &&
       entity.type === MediaType.TV
     ) {
       try {
-        const mediaRepository = getRepository(Media);
+        const mediaRepository = manager.getRepository(Media);
         const settings = getSettings();
         if (settings.sonarr.length === 0 && !settings.sonarr[0]) {
           logger.warn(
@@ -549,7 +558,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
             mediaId: entity.media.id,
           });
 
-          const requestRepository = getRepository(MediaRequest);
+          const requestRepository = manager.getRepository(MediaRequest);
           entity.status = MediaRequestStatus.COMPLETED;
           entity.seasons.forEach((season) => {
             season.status = MediaRequestStatus.COMPLETED;
@@ -567,7 +576,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         const tvdbId = series.external_ids.tvdb_id ?? media.tvdbId;
 
         if (!tvdbId) {
-          const requestRepository = getRepository(MediaRequest);
+          const requestRepository = manager.getRepository(MediaRequest);
           await mediaRepository.remove(media);
           await requestRepository.remove(entity);
           throw new Error('TVDB ID not found');
@@ -719,6 +728,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         sonarr
           .addSeries(sonarrSeriesOptions)
           .then(async (sonarrSeries) => {
+            // Needs its own repository as this runs detached from the request transaction
+            const mediaRepository = getRepository(Media);
             // We grab media again here to make sure we have the latest version of it
             const media = await mediaRepository.findOne({
               where: { id: entity.media.id },
@@ -787,8 +798,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
           mediaId: entity.media.id,
         });
       } catch (e) {
-        const requestRepository = getRepository(MediaRequest);
-        const mediaRepository = getRepository(Media);
+        const requestRepository = manager.getRepository(MediaRequest);
+        const mediaRepository = manager.getRepository(Media);
         const media = await mediaRepository.findOne({
           where: { id: entity.media.id },
         });
@@ -817,8 +828,173 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
   }
 
-  public async updateParentStatus(entity: MediaRequest): Promise<void> {
-    const mediaRepository = getRepository(Media);
+  /**
+   * When a book request transitions to APPROVED (either directly by an
+   * admin click or via the auto-approve path on initial create), this hook
+   * triggers BookshelfAPI.addBook so the book actually lands in the
+   * configured Bookshelf instance. Mirrors the sendToRadarr/sendToSonarr
+   * pattern, just simpler — no quality-profile resolution since the
+   * Bookshelf settings already encode the profile.
+   */
+  public async sendToBookshelf(
+    entity: MediaRequest,
+    manager: EntityManager
+  ): Promise<void> {
+    if (
+      entity.status !== MediaRequestStatus.APPROVED ||
+      (entity.type !== MediaType.AUDIOBOOK && entity.type !== MediaType.EBOOK)
+    ) {
+      return;
+    }
+    try {
+      const mediaRepository = manager.getRepository(Media);
+      const settings = getSettings();
+      const targetMediaType =
+        entity.type === MediaType.AUDIOBOOK ? 'audiobook' : 'ebook';
+      const server =
+        settings.bookshelf.find(
+          (b) => b.id === entity.serverId && b.mediaType === targetMediaType
+        ) ??
+        settings.bookshelf.find(
+          (b) => b.mediaType === targetMediaType && b.isDefault
+        );
+      if (!server) {
+        logger.warn(
+          'No Bookshelf instance configured for approved book request',
+          {
+            label: 'Media Request',
+            requestId: entity.id,
+            mediaType: entity.type,
+          }
+        );
+        return;
+      }
+
+      const media = await mediaRepository.findOne({
+        where: { id: entity.media.id },
+      });
+      if (!media) {
+        return;
+      }
+
+      // Already added to Bookshelf — skip duplicate addBook call.
+      if (media.externalServiceId != null) {
+        return;
+      }
+
+      // Pull the author name from the resolved metadata so addBook can do
+      // its /author/lookup. We don't have a stored author on Media; fetch
+      // by foreignBookId from Bookshelf.
+      const BookshelfAPI = (await import('@server/api/servarr/bookshelf'))
+        .default;
+      const { getHardcoverClient } = await import('@server/api/hardcover');
+      const { guessAuthorCandidates } = await import('@server/models/Book');
+      const client = new BookshelfAPI({
+        apiKey: server.apiKey,
+        url: BookshelfAPI.buildUrl(server, '/api/v1'),
+      });
+      const lookup = await client.searchBook(`work:${media.tmdbId}`);
+      const match = lookup[0];
+      if (!match) {
+        logger.warn('Bookshelf lookup empty for approved book request', {
+          label: 'Media Request',
+          requestId: entity.id,
+          tmdbId: media.tmdbId,
+        });
+        return;
+      }
+
+      // Bookshelf's authorTitle is junk-formatted; try multiple
+      // candidate parses against /author/lookup until one matches.
+      const candidates = guessAuthorCandidates(match.authorTitle, match.title);
+      let resolvedForeignAuthorId: string | undefined;
+      let resolvedAuthorName: string | undefined;
+      for (const candidate of candidates) {
+        const result = await client.searchAuthor(candidate).catch(() => []);
+        const top = result[0];
+        if (top?.foreignAuthorId) {
+          resolvedForeignAuthorId = top.foreignAuthorId;
+          resolvedAuthorName = top.authorName;
+          break;
+        }
+      }
+
+      if (!resolvedForeignAuthorId) {
+        logger.error('Could not resolve author from any candidate', {
+          label: 'Media Request',
+          requestId: entity.id,
+          authorTitle: match.authorTitle,
+          candidates,
+        });
+        const requestRepository = manager.getRepository(MediaRequest);
+        entity.status = MediaRequestStatus.FAILED;
+        await requestRepository.save(entity);
+        return;
+      }
+
+      const hardcover = getHardcoverClient();
+      const canonicalTitle = hardcover
+        ? (
+            await hardcover.getBookFullDetail(media.tmdbId).catch(() => null)
+          )?.title?.trim()
+        : undefined;
+
+      try {
+        const book = await client.addBook({
+          foreignBookId: String(media.tmdbId),
+          canonicalTitle,
+          foreignAuthorId: resolvedForeignAuthorId,
+          authorName: resolvedAuthorName,
+          // Honor the per-request quality profile override stored on the
+          // MediaRequest (set via the modal's Quality Profile dropdown).
+          profileId: entity.profileId ?? server.activeProfileId,
+          metadataProfileId:
+            entity.languageProfileId ?? server.activeMetadataProfileId,
+          rootFolderPath: entity.rootFolder ?? server.activeDirectory,
+          monitored: true,
+          tags: entity.tags ?? server.tags,
+          searchNow: true,
+        });
+
+        await mediaRepository.update(media.id, {
+          status: MediaStatus.PROCESSING,
+          serviceId: server.id,
+          externalServiceId: book.id ?? null,
+          externalServiceSlug: book.titleSlug ?? null,
+        });
+        logger.info('Bookshelf accepted approved book request', {
+          label: 'Media Request',
+          requestId: entity.id,
+          bookId: book.id,
+        });
+      } catch (e) {
+        logger.error(
+          'Failed to add approved book to Bookshelf, marking FAILED',
+          {
+            label: 'Media Request',
+            requestId: entity.id,
+            errorMessage: (e as Error).message,
+          }
+        );
+        const requestRepository = manager.getRepository(MediaRequest);
+        entity.status = MediaRequestStatus.FAILED;
+        await requestRepository.save(entity);
+        MediaRequest.sendNotification(entity, media, Notification.MEDIA_FAILED);
+      }
+    } catch (e) {
+      logger.error('sendToBookshelf failed unexpectedly', {
+        label: 'Media Request',
+        requestId: entity.id,
+        errorMessage: (e as Error).message,
+      });
+    }
+  }
+
+  public async updateParentStatus(
+    manager: EntityManager,
+    entity: MediaRequest
+  ): Promise<void> {
+    const mediaRepository = manager.getRepository(Media);
     const media = await mediaRepository.findOne({
       where: { id: entity.media.id },
     });
@@ -832,8 +1008,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     const statusKey = entity.is4k ? 'status4k' : 'status';
-    const seasonRequestRepository = getRepository(SeasonRequest);
-    const requestRepository = getRepository(MediaRequest);
+    const seasonRequestRepository = manager.getRepository(SeasonRequest);
+    const requestRepository = manager.getRepository(MediaRequest);
 
     if (
       entity.status === MediaRequestStatus.APPROVED &&
@@ -892,7 +1068,7 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       media.mediaType === MediaType.TV &&
       entity.status === MediaRequestStatus.DECLINED
     ) {
-      const seasonRepository = getRepository(Season);
+      const seasonRepository = manager.getRepository(Season);
       const actualSeasons = await seasonRepository.find({
         where: { media: { id: media.id } },
       });
@@ -983,8 +1159,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.sendToRadarr(event.entity as MediaRequest);
-      await this.sendToSonarr(event.entity as MediaRequest);
+      await this.sendToRadarr(event.entity as MediaRequest, event.manager);
+      await this.sendToSonarr(event.entity as MediaRequest, event.manager);
+      await this.sendToBookshelf(event.entity as MediaRequest, event.manager);
     } catch (e) {
       logger.error('Error while sending to *arr in afterUpdate subscriber', {
         label: 'Media Request',
@@ -994,7 +1171,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.updateParentStatus(event.entity as MediaRequest);
+      await withNestedTransaction(event.manager, async (manager) => {
+        await this.updateParentStatus(manager, event.entity as MediaRequest);
+      });
 
       if (event.entity.status === MediaRequestStatus.COMPLETED) {
         if (event.entity.media.mediaType === MediaType.MOVIE) {
@@ -1002,6 +1181,19 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         }
         if (event.entity.media.mediaType === MediaType.TV) {
           await this.notifyAvailableSeries(event.entity as MediaRequest, event);
+        }
+        if (
+          event.entity.media.mediaType === MediaType.AUDIOBOOK ||
+          event.entity.media.mediaType === MediaType.EBOOK
+        ) {
+          // Books don't have TMDB metadata; reuse the generic MediaRequest
+          // notification path (which the bryanlabs fork extended to handle
+          // AUDIOBOOK/EBOOK with a minimal Hardcover-id subject line).
+          await MediaRequest.sendNotification(
+            event.entity as MediaRequest,
+            event.entity.media,
+            Notification.MEDIA_AVAILABLE
+          );
         }
       }
     } catch (e) {
@@ -1022,8 +1214,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.sendToRadarr(event.entity as MediaRequest);
-      await this.sendToSonarr(event.entity as MediaRequest);
+      await this.sendToRadarr(event.entity as MediaRequest, event.manager);
+      await this.sendToSonarr(event.entity as MediaRequest, event.manager);
+      await this.sendToBookshelf(event.entity as MediaRequest, event.manager);
     } catch (e) {
       logger.error('Error while sending to *arr in afterInsert subscriber', {
         label: 'Media Request',
@@ -1033,7 +1226,9 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
     }
 
     try {
-      await this.updateParentStatus(event.entity as MediaRequest);
+      await withNestedTransaction(event.manager, async (manager) => {
+        await this.updateParentStatus(manager, event.entity as MediaRequest);
+      });
     } catch (e) {
       logger.error(
         'Error while updating parent status in afterInsert subscriber',

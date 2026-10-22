@@ -28,12 +28,18 @@ const useSearchInput = (): SearchObject => {
    * This effect handles routing when the debounced search input
    * value changes.
    *
-   * If we are not already on the /search route, then we push
-   * in a new route. If we are, then we only replace the history.
+   * If we are already on the /search, /audiobooks, or /ebooks route,
+   * then we only replace the history. Otherwise we push a new route.
+   * The /audiobooks and /ebooks pages handle their own filtering when
+   * a `query` param is present so search stays scoped to the page.
    */
+  const localSearchPaths = ['/search', '/audiobooks', '/ebooks'];
   useEffect(() => {
     if (debouncedValue !== '' && searchOpen) {
-      if (router.pathname.startsWith('/search')) {
+      const isLocalSearch = localSearchPaths.some((p) =>
+        router.pathname.startsWith(p)
+      );
+      if (isLocalSearch) {
         router.replace({
           pathname: router.pathname,
           query: {
@@ -71,6 +77,18 @@ const useSearchInput = (): SearchObject => {
         router.replace('/').then(() => window.scrollTo(0, 0));
       }
     }
+    // For /audiobooks and /ebooks, clearing the search just removes the
+    // query param so the page swaps back to discover mode without leaving.
+    if (
+      searchValue === '' &&
+      (router.pathname.startsWith('/audiobooks') ||
+        router.pathname.startsWith('/ebooks')) &&
+      router.query.query
+    ) {
+      const rest = { ...router.query };
+      delete rest.query;
+      router.replace({ pathname: router.pathname, query: rest });
+    }
   }, [searchOpen]);
 
   /**
@@ -96,12 +114,18 @@ const useSearchInput = (): SearchObject => {
           : ''
       );
 
-      if (!router.pathname.startsWith('/search') && !router.query.query) {
+      if (
+        !localSearchPaths.some((p) => router.pathname.startsWith(p)) &&
+        !router.query.query
+      ) {
         setIsOpen(false);
       }
     }
 
-    if (router.pathname.startsWith('/search')) {
+    if (
+      localSearchPaths.some((p) => router.pathname.startsWith(p)) &&
+      router.query.query
+    ) {
       setIsOpen(true);
     }
   }, [router, setSearchValue]);
