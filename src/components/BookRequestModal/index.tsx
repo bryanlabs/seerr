@@ -1,8 +1,8 @@
 import Modal from '@app/components/Common/Modal';
+import useToasts from '@app/hooks/useToasts';
 import { Transition } from '@headlessui/react';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
-import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 interface BookProfile {

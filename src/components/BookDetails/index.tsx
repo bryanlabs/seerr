@@ -8,6 +8,7 @@ import Tag from '@app/components/Common/Tag';
 import IssueModal from '@app/components/IssueModal';
 import StatusBadge from '@app/components/StatusBadge';
 import BookTitleCard from '@app/components/TitleCard/BookTitleCard';
+import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import ErrorPage from '@app/pages/_error';
 import {
@@ -25,7 +26,6 @@ import type { BookDetails as BookDetailsType } from '@server/models/Book';
 import axios from 'axios';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
-import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 interface BookshelfRecommendationItem {
