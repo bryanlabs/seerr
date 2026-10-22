@@ -324,8 +324,12 @@ ebookRoutes.post('/request', async (req, res, next) => {
     if (existing) {
       return res.status(202).json({
         message: 'Request already exists',
-        request: existing,
-        media,
+        request: {
+          ...existing,
+          requestedBy: existing.requestedBy?.filter(),
+          modifiedBy: existing.modifiedBy?.filter(),
+        },
+        media: media.filter(req.user),
       });
     }
 
@@ -365,7 +369,7 @@ ebookRoutes.post('/request', async (req, res, next) => {
 
     return res.status(201).json({
       request,
-      media,
+      media: media.filter(req.user),
       message: autoApprove
         ? 'Request approved; Bookshelf will pick it up shortly'
         : 'Request pending admin approval',
@@ -471,7 +475,11 @@ ebookRoutes.get('/:foreignBookId', async (req, res, next) => {
     return res
       .status(200)
       .json(
-        mapHardcoverToBookDetails(detail, MediaType.EBOOK, media ?? undefined)
+        mapHardcoverToBookDetails(
+          detail,
+          MediaType.EBOOK,
+          media?.filter(req.user)
+        )
       );
   } catch (e) {
     logger.error('Ebook details failed', {
