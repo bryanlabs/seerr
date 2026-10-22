@@ -9,6 +9,7 @@ import {
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
+import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { User } from '@server/entity/User';
 import { getSettings } from '@server/lib/settings';
@@ -364,13 +365,13 @@ describe('PUT /request/:requestId (tv)', () => {
     const requestRepo = getRepository(MediaRequest);
 
     const owner = await seedUser('admin@seerr.dev');
-    const otherUser = await seedUser('demo@seerr.dev');
+    const otherUser = await seedUser('friend@seerr.dev');
 
     const mediaRequest = await seedTvRequest(owner, [1]);
     const otherRequest = await seedTvRequest(otherUser, [3]);
 
     const admin = await loginAs('admin@seerr.dev', 'test1234');
-    const friend = await loginAs('demo@seerr.dev', 'test1234');
+    const friend = await loginAs('friend@seerr.dev', 'test1234');
 
     const [adminRes, friendRes] = await Promise.all([
       admin
@@ -408,13 +409,13 @@ describe('PUT /request/:requestId (tv)', () => {
 describe('PUT /request/:requestId (season availability)', () => {
   it('does not add a season the media already has', async () => {
     const requestRepo = getRepository(MediaRequest);
-    const owner = await seedUser('demo@seerr.dev');
+    const owner = await seedUser('friend@seerr.dev');
     const mediaRequest = await seedTvRequest(owner, [1]);
     await seedMediaSeasons(67890, [
       { seasonNumber: 2, status: MediaStatus.AVAILABLE },
     ]);
 
-    const agent = await loginAs('demo@seerr.dev', 'test1234');
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
     const res = await agent.put(`/request/${mediaRequest.id}`).send({
       mediaType: MediaType.TV,
       seasons: [1, 2, 3],
@@ -432,13 +433,13 @@ describe('PUT /request/:requestId (season availability)', () => {
   });
 
   it('returns 202 when every requested season is already covered', async () => {
-    const owner = await seedUser('demo@seerr.dev');
+    const owner = await seedUser('friend@seerr.dev');
     const mediaRequest = await seedTvRequest(owner, [1]);
     await seedMediaSeasons(67890, [
       { seasonNumber: 2, status: MediaStatus.AVAILABLE },
     ]);
 
-    const agent = await loginAs('demo@seerr.dev', 'test1234');
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
     const res = await agent.put(`/request/${mediaRequest.id}`).send({
       mediaType: MediaType.TV,
       seasons: [2],
@@ -449,14 +450,14 @@ describe('PUT /request/:requestId (season availability)', () => {
 
   it('keeps the seasons it already holds once they are available', async () => {
     const requestRepo = getRepository(MediaRequest);
-    const owner = await seedUser('demo@seerr.dev');
+    const owner = await seedUser('friend@seerr.dev');
     const mediaRequest = await seedTvRequest(owner, [1, 2]);
     await seedMediaSeasons(67890, [
       { seasonNumber: 1, status: MediaStatus.AVAILABLE },
       { seasonNumber: 2, status: MediaStatus.PROCESSING },
     ]);
 
-    const agent = await loginAs('demo@seerr.dev', 'test1234');
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
     const res = await agent.put(`/request/${mediaRequest.id}`).send({
       mediaType: MediaType.TV,
       seasons: [1, 2],
@@ -477,13 +478,13 @@ describe('PUT /request/:requestId (season availability)', () => {
 
   it('does not charge quota for a season the media already has', async () => {
     const requestRepo = getRepository(MediaRequest);
-    const owner = await seedUser('demo@seerr.dev', { tvQuotaLimit: 1 });
+    const owner = await seedUser('friend@seerr.dev', { tvQuotaLimit: 1 });
     const mediaRequest = await seedTvRequest(owner, [1]);
     await seedMediaSeasons(67890, [
       { seasonNumber: 2, status: MediaStatus.AVAILABLE },
     ]);
 
-    const agent = await loginAs('demo@seerr.dev', 'test1234');
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
     const res = await agent.put(`/request/${mediaRequest.id}`).send({
       mediaType: MediaType.TV,
       seasons: [1, 2],
@@ -685,10 +686,10 @@ describe('PUT /request/:requestId (quota)', () => {
 
   it('charges only the net increase when an edit both adds and removes', async () => {
     const requestRepo = getRepository(MediaRequest);
-    const owner = await seedUser('demo@seerr.dev', { tvQuotaLimit: 4 });
+    const owner = await seedUser('friend@seerr.dev', { tvQuotaLimit: 4 });
     const mediaRequest = await seedTvRequest(owner, [1, 2, 3]);
 
-    const agent = await loginAs('demo@seerr.dev', 'test1234');
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
     const res = await agent.put(`/request/${mediaRequest.id}`).send({
       mediaType: MediaType.TV,
       seasons: [1, 2, 4, 5],
