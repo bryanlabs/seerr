@@ -103,6 +103,18 @@ export interface SonarrSettings extends DVRSettings {
   monitorNewItems: 'all' | 'none';
 }
 
+/**
+ * Bookshelf is a Readarr fork. One Seerr instance fronts two Bookshelf
+ * instances: one for audiobooks (mediaType 'audiobook') and one for ebooks
+ * (mediaType 'ebook'). Each stores its own metadata profile in addition to
+ * quality profile since Readarr splits those concerns.
+ */
+export interface BookshelfSettings extends DVRSettings {
+  mediaType: 'audiobook' | 'ebook';
+  activeMetadataProfileId: number;
+  activeMetadataProfileName: string;
+}
+
 interface Quota {
   quotaLimit?: number;
   quotaDays?: number;
@@ -138,9 +150,12 @@ export interface MainSettings {
   defaultQuotas: {
     movie: Quota;
     tv: Quota;
+    audiobook?: Quota;
+    ebook?: Quota;
   };
   hideAvailable: boolean;
   hideBlocklisted: boolean;
+  hideRequested: boolean;
   localLogin: boolean;
   mediaServerLogin: boolean;
   newPlexLogin: boolean;
@@ -193,6 +208,7 @@ interface FullPublicSettings extends PublicSettings {
   applicationUrl: string;
   hideAvailable: boolean;
   hideBlocklisted: boolean;
+  hideRequested: boolean;
   localLogin: boolean;
   mediaServerLogin: boolean;
   movie4kEnabled: boolean;
@@ -213,6 +229,8 @@ interface FullPublicSettings extends PublicSettings {
   emailEnabled: boolean;
   userEmailRequired: boolean;
   newPlexLogin: boolean;
+  oidcEnabled: boolean;
+  oidcAutoLogin: boolean;
   youtubeUrl: string;
   plexClientIdentifier: string;
 }
@@ -359,6 +377,8 @@ export type JobId =
   | 'plex-refresh-token'
   | 'radarr-scan'
   | 'sonarr-scan'
+  | 'bookshelf-sync'
+  | 'hardcover-watchlist-sync'
   | 'download-sync'
   | 'download-sync-reset'
   | 'jellyfin-recently-added-scan'
@@ -378,6 +398,7 @@ export interface AllSettings {
   tautulli: TautulliSettings;
   radarr: RadarrSettings[];
   sonarr: SonarrSettings[];
+  bookshelf: BookshelfSettings[];
   public: PublicSettings;
   notifications: NotificationSettings;
   jobs: Record<JobId, JobSettings>;
@@ -409,9 +430,12 @@ class Settings {
         defaultQuotas: {
           movie: {},
           tv: {},
+          audiobook: {},
+          ebook: {},
         },
         hideAvailable: false,
         hideBlocklisted: false,
+        hideRequested: false,
         localLogin: true,
         mediaServerLogin: true,
         newPlexLogin: true,
@@ -454,6 +478,7 @@ class Settings {
       },
       radarr: [],
       sonarr: [],
+      bookshelf: [],
       public: {
         initialized: false,
       },
@@ -582,6 +607,12 @@ class Settings {
         'sonarr-scan': {
           schedule: '0 30 4 * * *',
         },
+        'bookshelf-sync': {
+          schedule: '0 */5 * * * *',
+        },
+        'hardcover-watchlist-sync': {
+          schedule: '*/60 * * * * *',
+        },
         'availability-sync': {
           schedule: '0 0 5 * * *',
         },
@@ -691,6 +722,14 @@ class Settings {
     this.data.sonarr = data;
   }
 
+  get bookshelf(): BookshelfSettings[] {
+    return this.data.bookshelf;
+  }
+
+  set bookshelf(data: BookshelfSettings[]) {
+    this.data.bookshelf = data;
+  }
+
   get public(): PublicSettings {
     return this.data.public;
   }
@@ -706,6 +745,7 @@ class Settings {
       applicationUrl: this.data.main.applicationUrl,
       hideAvailable: this.data.main.hideAvailable,
       hideBlocklisted: this.data.main.hideBlocklisted,
+      hideRequested: this.data.main.hideRequested,
       localLogin: this.data.main.localLogin,
       mediaServerLogin: this.data.main.mediaServerLogin,
       jellyfinExternalHost: this.data.jellyfin.externalHostname,
@@ -730,6 +770,10 @@ class Settings {
       userEmailRequired:
         this.data.notifications.agents.email.options.userEmailRequired,
       newPlexLogin: this.data.main.newPlexLogin,
+      oidcEnabled: process.env.OIDC_ENABLED?.toLowerCase() === 'true',
+      oidcAutoLogin:
+        process.env.OIDC_ENABLED?.toLowerCase() === 'true' &&
+        process.env.OIDC_AUTO_LOGIN?.toLowerCase() === 'true',
       youtubeUrl: this.data.main.youtubeUrl,
       plexClientIdentifier: this.data.clientId,
     };

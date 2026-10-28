@@ -1,9 +1,10 @@
+import type { MediaType } from '@server/constants/media';
 import type { User } from '@server/entity/User';
 import type { PaginatedResponse } from '@server/interfaces/api/common';
 
 export interface BlocklistItem {
   tmdbId: number;
-  mediaType: 'movie' | 'tv';
+  mediaType: MediaType;
   title?: string;
   createdAt?: Date;
   user?: User;

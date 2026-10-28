@@ -3,18 +3,20 @@ import ConfirmButton from '@app/components/Common/ConfirmButton';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import PageTitle from '@app/components/Common/PageTitle';
 import Tooltip from '@app/components/Common/Tooltip';
-import { sliderTitles } from '@app/components/Discover/constants';
+import BookSlider from '@app/components/Discover/BookSlider';
 import CreateSlider from '@app/components/Discover/CreateSlider';
 import DiscoverSliderEdit from '@app/components/Discover/DiscoverSliderEdit';
 import MovieGenreSlider from '@app/components/Discover/MovieGenreSlider';
 import NetworkSlider from '@app/components/Discover/NetworkSlider';
 import PlexWatchlistSlider from '@app/components/Discover/PlexWatchlistSlider';
-import RecentlyAddedSlider from '@app/components/Discover/RecentlyAddedSlider';
 import RecentRequestsSlider from '@app/components/Discover/RecentRequestsSlider';
+import RecentlyAddedSlider from '@app/components/Discover/RecentlyAddedSlider';
 import StudioSlider from '@app/components/Discover/StudioSlider';
 import TvGenreSlider from '@app/components/Discover/TvGenreSlider';
+import { sliderTitles } from '@app/components/Discover/constants';
 import MediaSlider from '@app/components/MediaSlider';
 import { encodeURIExtraParams } from '@app/hooks/useDiscover';
+import useToasts from '@app/hooks/useToasts';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
@@ -31,7 +33,6 @@ import type DiscoverSlider from '@server/entity/DiscoverSlider';
 import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.Discover', {
@@ -282,6 +283,68 @@ const Discover = () => {
             break;
           case DiscoverSliderType.NETWORKS:
             sliderComponent = <NetworkSlider />;
+            break;
+          case DiscoverSliderType.POPULAR_AUDIOBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="popular-audiobooks"
+                title={intl.formatMessage(sliderTitles.popularaudiobooks)}
+                mediaType="audiobook"
+                sort="popularity"
+              />
+            );
+            break;
+          case DiscoverSliderType.TRENDING_AUDIOBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="trending-audiobooks"
+                title={intl.formatMessage(sliderTitles.trendingaudiobooks)}
+                mediaType="audiobook"
+                sort="trending"
+                trendingPeriod="month"
+              />
+            );
+            break;
+          case DiscoverSliderType.NEW_AUDIOBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="new-audiobooks"
+                title={intl.formatMessage(sliderTitles.newaudiobooks)}
+                mediaType="audiobook"
+                sort="release_date"
+              />
+            );
+            break;
+          case DiscoverSliderType.POPULAR_EBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="popular-ebooks"
+                title={intl.formatMessage(sliderTitles.popularebooks)}
+                mediaType="ebook"
+                sort="popularity"
+              />
+            );
+            break;
+          case DiscoverSliderType.TRENDING_EBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="trending-ebooks"
+                title={intl.formatMessage(sliderTitles.trendingebooks)}
+                mediaType="ebook"
+                sort="trending"
+                trendingPeriod="month"
+              />
+            );
+            break;
+          case DiscoverSliderType.NEW_EBOOKS:
+            sliderComponent = (
+              <BookSlider
+                sliderKey="new-ebooks"
+                title={intl.formatMessage(sliderTitles.newebooks)}
+                mediaType="ebook"
+                sort="release_date"
+              />
+            );
             break;
           case DiscoverSliderType.TMDB_MOVIE_KEYWORD:
             sliderComponent = (

@@ -7,6 +7,11 @@ import PreparedEmail from '@server/lib/email';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { setupTestDb } from '@server/test/db';
+import {
+  allowlistedSettings,
+  assertNoCredentials,
+  seedUserSettings,
+} from '@server/test/userSettings';
 import type { Express } from 'express';
 import express from 'express';
 import session from 'express-session';
@@ -18,6 +23,37 @@ const emailMock = mock.method(PreparedEmail.prototype, 'send', async () => {
 }).mock;
 
 let app: Express;
+
+async function withOidcEnv(callback: () => Promise<void>) {
+  const keys = [
+    'OIDC_ENABLED',
+    'OIDC_ISSUER_URL',
+    'OIDC_CLIENT_ID',
+    'OIDC_CLIENT_SECRET',
+    'OIDC_REDIRECT_URI',
+  ];
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+
+  process.env.OIDC_ENABLED = 'true';
+  process.env.OIDC_ISSUER_URL = 'https://auth.example.com/application/o/seerr/';
+  process.env.OIDC_CLIENT_ID = 'seerr';
+  process.env.OIDC_CLIENT_SECRET = 'secret';
+  process.env.OIDC_REDIRECT_URI =
+    'https://seerr.example.com/auth/oidc/callback';
+
+  try {
+    await callback();
+  } finally {
+    for (const key of keys) {
+      const value = previous.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
 
 function createApp() {
   const app = express();
@@ -109,6 +145,30 @@ describe('GET /auth/me', () => {
     assert.ok(res.body.warnings.includes('userEmailRequired'));
 
     settings.notifications.agents.email.options.userEmailRequired = false;
+  });
+
+  it('returns only the allowlisted settings fields', async () => {
+    await seedUserSettings('admin@seerr.dev');
+    const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+    const res = await agent.get('/auth/me');
+
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual(Object.keys(res.body.settings).sort(), [
+      'discoverRegion',
+      'locale',
+      'notificationTypes',
+      'originalLanguage',
+      'streamingRegion',
+      'watchlistSyncMovies',
+      'watchlistSyncTv',
+    ]);
+    assert.strictEqual(res.body.settings.locale, allowlistedSettings.locale);
+    assert.strictEqual(
+      res.body.settings.discoverRegion,
+      allowlistedSettings.discoverRegion
+    );
+    assertNoCredentials(res.body);
   });
 });
 
@@ -230,6 +290,32 @@ describe('POST /auth/logout', () => {
     // Session should be invalidated — /me should fail
     const meAfterRes = await agent.get('/auth/me');
     assert.strictEqual(meAfterRes.status, 403);
+  });
+});
+
+describe('GET /auth/oidc/callback', () => {
+  it('rejects invalid state when not authenticated', async () => {
+    await withOidcEnv(async () => {
+      const res = await request(app).get(
+        '/auth/oidc/callback?code=test-code&state=bad-state'
+      );
+
+      assert.strictEqual(res.status, 403);
+      assert.strictEqual(res.body.message, 'Invalid authentication state.');
+    });
+  });
+
+  it('redirects an already authenticated user away from stale invalid callback URLs', async () => {
+    await withOidcEnv(async () => {
+      const agent = await authenticatedAgent('admin@seerr.dev', 'test1234');
+
+      const res = await agent.get(
+        '/auth/oidc/callback?code=test-code&state=bad-state'
+      );
+
+      assert.strictEqual(res.status, 302);
+      assert.strictEqual(res.headers.location, '/');
+    });
   });
 });
 

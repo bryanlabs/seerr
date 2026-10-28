@@ -17,7 +17,7 @@ import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
 import { useRouter } from 'next/dist/client/router';
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { useIntl } from 'react-intl';
 import { CSSTransition, SwitchTransition } from 'react-transition-group';
 import useSWR from 'swr';
@@ -28,6 +28,7 @@ const messages = defineMessages('components.Login', {
   signinwithplex: 'Use your Plex account',
   signinwithjellyfin: 'Use your {mediaServerName} account',
   signinwithoverseerr: 'Use your {applicationTitle} account',
+  signinwithbryanlabs: 'Sign in with Google or Apple',
   orsigninwith: 'Or sign in with',
 });
 
@@ -110,6 +111,18 @@ const Login = () => {
     (isJellyfin && settings.currentSettings.mediaServerLogin) ||
     settings.currentSettings.localLogin;
   const additionalLoginOptions = [
+    settings.currentSettings.oidcEnabled && (
+      <Button
+        key="bryanlabs"
+        data-testid="bryanlabs-login-button"
+        className="flex-1 bg-transparent"
+        onClick={() => {
+          window.location.href = '/api/v1/auth/oidc/login';
+        }}
+      >
+        <span>{intl.formatMessage(messages.signinwithbryanlabs)}</span>
+      </Button>
+    ),
     settings.currentSettings.mediaServerLogin &&
       (settings.currentSettings.mediaServerType === MediaServerType.PLEX ? (
         <PlexLoginButton

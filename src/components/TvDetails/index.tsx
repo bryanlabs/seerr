@@ -28,6 +28,7 @@ import Season from '@app/components/TvDetails/Season';
 import useDeepLinks from '@app/hooks/useDeepLinks';
 import useLocale from '@app/hooks/useLocale';
 import useSettings from '@app/hooks/useSettings';
+import useToasts from '@app/hooks/useToasts';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
@@ -55,8 +56,8 @@ import {
   MediaType,
 } from '@server/constants/media';
 import { MediaServerType } from '@server/constants/server';
-import type { Crew } from '@server/models/common';
 import type { TvDetails as TvDetailsType } from '@server/models/Tv';
+import type { Crew } from '@server/models/common';
 import axios from 'axios';
 import { countries } from 'country-flag-icons';
 import 'country-flag-icons/3x2/flags.css';
@@ -64,7 +65,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { useToasts } from 'react-toast-notifications';
 import useSWR from 'swr';
 
 const messages = defineMessages('components.TvDetails', {
@@ -303,19 +303,26 @@ const TvDetails = ({ tv }: TvDetailsProps) => {
     return [...requestedSeasons, ...availableSeasons];
   };
 
-  const showHasSpecials = data.seasons.some(
-    (season) =>
-      season.seasonNumber === 0 &&
-      settings.currentSettings.enableSpecialEpisodes
-  );
+  // Mirrors the season list the request modal offers, so the two agree.
+  const requestableSeasons = data.seasons
+    .filter(
+      (season) =>
+        season.episodeCount !== 0 &&
+        (settings.currentSettings.enableSpecialEpisodes ||
+          season.seasonNumber !== 0)
+    )
+    .map((season) => season.seasonNumber);
 
-  const isComplete =
-    (showHasSpecials ? seasonCount + 1 : seasonCount) <=
-    getAllRequestedSeasons(false).length;
+  const isSeasonSetComplete = (is4k: boolean) => {
+    const requested = getAllRequestedSeasons(is4k);
+    return requestableSeasons.every((seasonNumber) =>
+      requested.includes(seasonNumber)
+    );
+  };
 
-  const is4kComplete =
-    (showHasSpecials ? seasonCount + 1 : seasonCount) <=
-    getAllRequestedSeasons(true).length;
+  const isComplete = isSeasonSetComplete(false);
+
+  const is4kComplete = isSeasonSetComplete(true);
 
   const streamingRegion = user?.settings?.streamingRegion
     ? user.settings.streamingRegion

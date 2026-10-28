@@ -3,8 +3,6 @@ import LoadingBar from '@app/components/LoadingBar';
 import PWAHeader from '@app/components/PWAHeader';
 import ServiceWorkerSetup from '@app/components/ServiceWorkerSetup';
 import StatusChecker from '@app/components/StatusChecker';
-import Toast from '@app/components/Toast';
-import ToastContainer from '@app/components/ToastContainer';
 import { InteractionProvider } from '@app/context/InteractionContext';
 import { LanguageContext } from '@app/context/LanguageContext';
 import { SettingsProvider } from '@app/context/SettingsContext';
@@ -22,8 +20,8 @@ import type { AppInitialProps, AppProps } from 'next/app';
 import App from 'next/app';
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
+import { Toaster } from 'react-hot-toast';
 import { IntlProvider } from 'react-intl';
-import { ToastProvider } from 'react-toast-notifications';
 import { SWRConfig } from 'swr';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -207,21 +205,27 @@ const CoreApp: Omit<NextAppComponentType, 'origGetInitialProps'> = ({
           <LoadingBar />
           <SettingsProvider currentSettings={currentSettings}>
             <InteractionProvider>
-              <ToastProvider components={{ Toast, ToastContainer }}>
-                <Head>
-                  <title>{currentSettings.applicationTitle}</title>
-                  <meta
-                    name="viewport"
-                    content="initial-scale=1, viewport-fit=cover, width=device-width"
-                  />
-                  <PWAHeader
-                    applicationTitle={currentSettings.applicationTitle}
-                  />
-                </Head>
-                <StatusChecker />
-                <ServiceWorkerSetup />
-                <UserContext initialUser={user}>{component}</UserContext>
-              </ToastProvider>
+              <Head>
+                <title>{currentSettings.applicationTitle}</title>
+                <meta
+                  name="viewport"
+                  content="initial-scale=1, viewport-fit=cover, width=device-width"
+                />
+                <PWAHeader
+                  applicationTitle={currentSettings.applicationTitle}
+                />
+              </Head>
+              <StatusChecker />
+              <ServiceWorkerSetup />
+              <UserContext initialUser={user}>{component}</UserContext>
+              <Toaster
+                position="top-right"
+                toastOptions={{ duration: 4000 }}
+                containerStyle={{
+                  zIndex: 10000,
+                  paddingTop: 'env(safe-area-inset-top)',
+                }}
+              />
             </InteractionProvider>
           </SettingsProvider>
         </IntlProvider>
@@ -239,6 +243,7 @@ CoreApp.getInitialProps = async (initialProps) => {
     applicationUrl: '',
     hideAvailable: false,
     hideBlocklisted: false,
+    hideRequested: false,
     movie4kEnabled: false,
     series4kEnabled: false,
     localLogin: true,
@@ -255,6 +260,8 @@ CoreApp.getInitialProps = async (initialProps) => {
     locale: 'en',
     emailEnabled: false,
     newPlexLogin: true,
+    oidcEnabled: false,
+    oidcAutoLogin: false,
     youtubeUrl: '',
     plexClientIdentifier: '',
   };
@@ -302,11 +309,18 @@ CoreApp.getInitialProps = async (initialProps) => {
         }
       } catch {
         // If there is no user, and ctx.res is set (to check if we are on the server side)
-        // _AND_ we are not already on the login or setup route, redirect to /login with a 307
+        // _AND_ we are not already on the login or setup route, redirect before anything renders
         // before anything actually renders
         if (!router.pathname.match(/(login|setup|resetpassword)/)) {
+          const safeNextPath = router.asPath?.startsWith('/')
+            ? router.asPath
+            : '/';
           ctx.res.writeHead(307, {
-            Location: '/login',
+            Location: currentSettings.oidcAutoLogin
+              ? `/api/v1/auth/oidc/login?next=${encodeURIComponent(
+                  safeNextPath
+                )}`
+              : '/login',
           });
           ctx.res.end();
         }

@@ -1,3 +1,4 @@
+import BookshelfAPI from '@server/api/servarr/bookshelf';
 import RadarrAPI from '@server/api/servarr/radarr';
 import SonarrAPI from '@server/api/servarr/sonarr';
 import TautulliAPI from '@server/api/tautulli';
@@ -17,7 +18,7 @@ import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { Router } from 'express';
 import type { FindOneOptions } from 'typeorm';
-import { In, IsNull, Not } from 'typeorm';
+import { EntityNotFoundError, In, IsNull, Not } from 'typeorm';
 
 const mediaRoutes = Router();
 
@@ -239,18 +240,18 @@ mediaRoutes.delete(
       }
 
       if (!serviceSettings) {
-        logger.warn(
-          `There is no default ${
-            is4k ? '4K ' : '' + isMovie ? 'Radarr' : 'Sonarr'
-          }/ server configured. Did you set any of your ${
-            is4k ? '4K ' : '' + isMovie ? 'Radarr' : 'Sonarr'
-          } servers as default?`,
+        const arrName = `${is4k ? '4K ' : ''}${isMovie ? 'Radarr' : 'Sonarr'}`;
+        logger.info(
+          `There is no default ${arrName} server configured. Did you set any of your ${arrName} servers as default?`,
           {
             label: 'Media Request',
             mediaId: media.id,
           }
         );
-        return;
+        return next({
+          status: 409,
+          message: `No ${arrName} server configured to delete media files`,
+        });
       }
 
       let service;
@@ -276,8 +277,74 @@ mediaRoutes.delete(
           throw new Error('TVDB ID not found');
         }
         await (service as SonarrAPI).removeSeries(tvdbId);
+
+        for (const season of media.seasons) {
+          season[is4k ? 'status4k' : 'status'] = MediaStatus.DELETED;
+        }
       }
 
+      media[is4k ? 'status4k' : 'status'] = MediaStatus.DELETED;
+      media.resetServiceData(is4k);
+      await mediaRepository.save(media);
+
+      return res.status(204).send();
+    } catch (e) {
+      if (e instanceof EntityNotFoundError) {
+        return next({ status: 404, message: 'Media not found' });
+      }
+      logger.error('Something went wrong deleting media file', {
+        label: 'Media',
+        mediaId: req.params.id,
+        message: e.message,
+      });
+      next({ status: 500, message: 'Failed to delete media file' });
+    }
+  }
+);
+
+// Bookshelf book file delete: removes the book from the configured
+// Bookshelf instance. Used by the admin "Delete from Bookshelf" action on
+// the book detail page.
+mediaRoutes.delete(
+  '/:id/bookfile',
+  isAuthenticated(Permission.MANAGE_REQUESTS),
+  async (req, res, next) => {
+    try {
+      const settings = getSettings();
+      const mediaRepository = getRepository(Media);
+      const media = await mediaRepository.findOneOrFail({
+        where: { id: Number(req.params.id) },
+      });
+
+      if (
+        media.mediaType !== MediaType.AUDIOBOOK &&
+        media.mediaType !== MediaType.EBOOK
+      ) {
+        return next({
+          status: 400,
+          message: 'Endpoint only valid for book media types',
+        });
+      }
+
+      const server = settings.bookshelf.find((b) => b.id === media.serviceId);
+      if (!server) {
+        return next({
+          status: 404,
+          message: 'No Bookshelf instance recorded for this media',
+        });
+      }
+      if (!media.externalServiceId) {
+        return next({
+          status: 404,
+          message: 'No Bookshelf book id recorded for this media',
+        });
+      }
+
+      const client = new BookshelfAPI({
+        apiKey: server.apiKey,
+        url: BookshelfAPI.buildUrl(server, '/api/v1'),
+      });
+      await client.removeBook(media.externalServiceId);
       return res.status(204).send();
     } catch (e) {
       logger.error('Something went wrong fetching media in delete request', {

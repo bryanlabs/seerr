@@ -22,6 +22,12 @@ export enum DiscoverSliderType {
   TMDB_NETWORK,
   TMDB_MOVIE_STREAMING_SERVICES,
   TMDB_TV_STREAMING_SERVICES,
+  POPULAR_AUDIOBOOKS,
+  TRENDING_AUDIOBOOKS,
+  NEW_AUDIOBOOKS,
+  POPULAR_EBOOKS,
+  TRENDING_EBOOKS,
+  NEW_EBOOKS,
 }
 
 export const defaultSliders: Partial<DiscoverSlider>[] = [
@@ -96,5 +102,41 @@ export const defaultSliders: Partial<DiscoverSlider>[] = [
     enabled: true,
     isBuiltIn: true,
     order: 11,
+  },
+  {
+    type: DiscoverSliderType.POPULAR_AUDIOBOOKS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 12,
+  },
+  {
+    type: DiscoverSliderType.TRENDING_AUDIOBOOKS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 13,
+  },
+  {
+    type: DiscoverSliderType.NEW_AUDIOBOOKS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 14,
+  },
+  {
+    type: DiscoverSliderType.POPULAR_EBOOKS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 15,
+  },
+  {
+    type: DiscoverSliderType.TRENDING_EBOOKS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 16,
+  },
+  {
+    type: DiscoverSliderType.NEW_EBOOKS,
+    enabled: true,
+    isBuiltIn: true,
+    order: 17,
   },
 ];

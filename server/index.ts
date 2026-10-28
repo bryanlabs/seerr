@@ -26,11 +26,12 @@ import avatarproxy from '@server/routes/avatarproxy';
 import imageproxy from '@server/routes/imageproxy';
 import { appDataPermissions } from '@server/utils/appDataVolume';
 import { getAppVersion } from '@server/utils/appVersion';
-import createCustomProxyAgent from '@server/utils/customProxyAgent';
+import createCustomProxyAgent, {
+  setForceIpv4First,
+} from '@server/utils/customProxyAgent';
 import { initializeDnsCache } from '@server/utils/dnsCache';
 import restartFlag from '@server/utils/restartFlag';
 import { getClientIp } from '@supercharge/request-ip';
-import axios from 'axios';
 import { TypeormStore } from 'connect-typeorm/out';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
@@ -39,14 +40,72 @@ import * as OpenApiValidator from 'express-openapi-validator';
 import type { Store } from 'express-session';
 import session from 'express-session';
 import fs from 'fs/promises';
-import http from 'http';
-import https from 'https';
 import yaml from 'js-yaml';
 import next from 'next';
 import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 
 const API_SPEC_PATH = path.join(__dirname, '../seerr-api.yml');
+const DEFAULT_SESSION_COOKIE_NAME = 'connect.sid';
+
+const getSessionCookieName = (): string =>
+  process.env.SESSION_COOKIE_NAME || DEFAULT_SESSION_COOKIE_NAME;
+
+const getOpenApiCookieAuthName = (
+  apiDocs: Record<string, unknown>
+): string | undefined => {
+  const components = apiDocs.components as Record<string, unknown> | undefined;
+  const securitySchemes = components?.securitySchemes as
+    | Record<string, unknown>
+    | undefined;
+  const cookieAuth = securitySchemes?.cookieAuth as
+    | Record<string, unknown>
+    | undefined;
+  const name = cookieAuth?.name;
+
+  return typeof name === 'string' ? name : undefined;
+};
+
+const validateStartupInvariants = (apiDocs: Record<string, unknown>): void => {
+  const runtimeCookieName = getSessionCookieName();
+  const openApiCookieName = getOpenApiCookieAuthName(apiDocs);
+
+  if (!openApiCookieName) {
+    logger.error(
+      'SEERR_INVARIANT_OPENAPI_COOKIE_AUTH_MISSING: OpenAPI cookie auth name is missing; refusing to start.',
+      {
+        label: 'StartupInvariant',
+        invariantCode: 'SEERR_INVARIANT_OPENAPI_COOKIE_AUTH_MISSING',
+        expectedPath: 'components.securitySchemes.cookieAuth.name',
+        runtimeCookieName,
+      }
+    );
+    process.exit(1);
+  }
+
+  if (runtimeCookieName !== openApiCookieName) {
+    logger.error(
+      'SEERR_INVARIANT_SESSION_COOKIE_MISMATCH: Runtime session cookie name does not match OpenAPI cookie auth name; refusing to start.',
+      {
+        label: 'StartupInvariant',
+        invariantCode: 'SEERR_INVARIANT_SESSION_COOKIE_MISMATCH',
+        runtimeCookieName,
+        openApiCookieName,
+        sessionCookieEnv: process.env.SESSION_COOKIE_NAME || '(unset)',
+        remediation:
+          'Set SESSION_COOKIE_NAME to the OpenAPI cookieAuth.name, or update the OpenAPI spec and deployment together.',
+      }
+    );
+    process.exit(1);
+  }
+
+  logger.info('Seerr startup invariant check passed.', {
+    label: 'StartupInvariant',
+    invariantCode: 'SEERR_INVARIANT_SESSION_COOKIE_MATCH',
+    runtimeCookieName,
+    openApiCookieName,
+  });
+};
 
 logger.info(`Starting Seerr version ${getAppVersion()}`);
 const dev = process.env.NODE_ENV !== 'production';
@@ -84,12 +143,13 @@ app
     const settings = await getSettings().load();
     restartFlag.initializeSettings(settings);
 
+    const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
+    const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
+    validateStartupInvariants(apiDocs);
+
     initI18n();
 
-    if (settings.network.forceIpv4First) {
-      axios.defaults.httpAgent = new http.Agent({ family: 4 });
-      axios.defaults.httpsAgent = new https.Agent({ family: 4 });
-    }
+    setForceIpv4First(settings.network.forceIpv4First);
 
     // Add DNS caching
     if (settings.network.dnsCache?.enabled) {
@@ -207,6 +267,7 @@ app
     server.use(
       '/api',
       session({
+        name: getSessionCookieName(),
         secret: settings.sessionSecret,
         resave: false,
         saveUninitialized: false,
@@ -222,13 +283,15 @@ app
         }).connect(sessionRespository) as Store,
       })
     );
-    const apiSpecContent = await fs.readFile(API_SPEC_PATH, 'utf-8');
-    const apiDocs = yaml.load(apiSpecContent) as Record<string, unknown>;
     server.use('/api-docs', swaggerUi.serve, swaggerUi.setup(apiDocs));
     server.use(
       OpenApiValidator.middleware({
         apiSpec: API_SPEC_PATH,
         validateRequests: true,
+        // Bryanlabs fork: routes added by this fork (audiobook, ebook,
+        // settings/bookshelf) are not in seerr-api.yml. Skip strict validation
+        // for any undocumented path rather than 404'ing it.
+        ignoreUndocumented: true,
       })
     );
     /**
