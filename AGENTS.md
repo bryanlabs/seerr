@@ -4,7 +4,7 @@
 
 BryanLabs fork of [Seerr](https://github.com/Seerr/seerr) (itself a fork of Jellyseerr/Overseerr). Seerr is a media request manager for Jellyfin/Plex/Emby integrated with Radarr and Sonarr. The BryanLabs fork adds audiobook and ebook support via Hardcover (metadata/discovery) and Bookshelf (a Readarr fork for download automation).
 
-Current fork version: `3.2.1-bryanlabs.60`. Active branch: `feat/audiobook-ebook-support`.
+Current fork version: `3.2.1-bryanlabs.61`. Active branch: `feat/audiobook-ebook-support`.
 
 ## Where it is used
 
