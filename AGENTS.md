@@ -4,7 +4,7 @@
 
 BryanLabs fork of [Seerr](https://github.com/Seerr/seerr) (itself a fork of Jellyseerr/Overseerr). Seerr is a media request manager for Jellyfin/Plex/Emby integrated with Radarr and Sonarr. The BryanLabs fork adds audiobook and ebook support via Hardcover (metadata/discovery) and Bookshelf (a Readarr fork for download automation).
 
-Current fork version: `3.2.1-bryanlabs.61`. Active branch: `feat/audiobook-ebook-support`.
+Current fork version: `3.2.1-bryanlabs.62`. Active branch: `main` (the default branch, so Dependabot scans what is deployed). Upstream `develop` is the `upstream` remote; this fork keeps no copy of it.
 
 ## Where it is used
 
@@ -15,7 +15,7 @@ Current fork version: `3.2.1-bryanlabs.61`. Active branch: `feat/audiobook-ebook
 
 ## BryanLabs customizations
 
-All custom work lives on the `feat/audiobook-ebook-support` branch. None of it is upstreamed.
+All custom work lives on `main`. None of it is upstreamed.
 
 ### New media types
 `server/constants/media.ts` extends `MediaType` with `AUDIOBOOK` and `EBOOK`.
@@ -112,12 +112,13 @@ src/
 
 ## Build and deploy
 
-Image: `ghcr.io/bryanlabs/seerr:<version>` built by `.github/workflows/ci.yml` (multi-arch amd64+arm64). For local AMD64 builds use:
+Image: `ghcr.io/bryanlabs/seerr:v<version>`, built on the cluster BuildKit (GitHub Actions never runs in this fork). From the worker-1 agent pod:
 
 ```
-docker buildx build --builder worker1 --platform linux/amd64 \
-  -t ghcr.io/bryanlabs/seerr:v<version> --push .
+pod-build ghcr.io/bryanlabs/seerr:v<version> .
 ```
+
+A release is a `chore(release): <version>` commit on `main` that bumps `package.json` and the version above, tagged `v<version>`. Pin the image digest in bare-metal `cluster/media-suite/overseerr/deployment.yaml`.
 
 Commits require conventional commit format (`@commitlint/config-conventional`) enforced by husky pre-commit hook. Use Git's configured signing method; no specific signing provider is required. Report actual signing errors without changing providers or bypassing signing.
 
