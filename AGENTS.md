@@ -132,6 +132,7 @@ Config PVC: `overseerr-config-pvc` mounted at `/app/config`.
 ## Gotchas
 
 - Upstream changes come in as cherry-picked backports (`Backport of upstream <sha> (#N).` in the commit body), never an upstream merge. Pull the prerequisite commits a backport depends on rather than rewriting it, and check each one against the book routes and `sendToBookshelf`.
+- Agent commits: run `pnpm install` first (the husky pre-commit hook sources files it creates), then commit with `HUSKY=0`, because the commitizen prepare-commit-msg hook needs a terminal. Signing is unaffected.
 - Local tests need Node 22 (`engine-strict`). Without it, `pnpm --config.engine-strict=false test` runs them on a newer Node; the image always builds on Node 22.
 
 - `ignoreUndocumented: true` at `server/index.ts:298` is required because audiobook/ebook routes are not in `seerr-api.yml`. Removing it causes all book routes to return 404.
