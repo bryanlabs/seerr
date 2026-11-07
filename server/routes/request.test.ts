@@ -12,6 +12,7 @@ import { MediaRequest } from '@server/entity/MediaRequest';
 import Season from '@server/entity/Season';
 import SeasonRequest from '@server/entity/SeasonRequest';
 import { User } from '@server/entity/User';
+import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import { checkUser } from '@server/middleware/auth';
 import { MediaRequestSubscriber } from '@server/subscriber/MediaRequestSubscriber';
@@ -257,15 +258,16 @@ describe('PUT /request/:requestId (movie)', () => {
 
 async function seedUser(
   email: string,
-  quotas: {
+  fields: {
     movieQuotaLimit?: number;
     tvQuotaLimit?: number;
     tvQuotaDays?: number;
+    permissions?: number;
   } = {}
 ) {
   const userRepo = getRepository(User);
   const user = await userRepo.findOneOrFail({ where: { email } });
-  Object.assign(user, quotas);
+  Object.assign(user, fields);
 
   return userRepo.save(user);
 }
@@ -450,7 +452,9 @@ describe('PUT /request/:requestId (season availability)', () => {
 
   it('keeps the seasons it already holds once they are available', async () => {
     const requestRepo = getRepository(MediaRequest);
-    const owner = await seedUser('friend@seerr.dev');
+    const owner = await seedUser('friend@seerr.dev', {
+      permissions: Permission.REQUEST | Permission.REQUEST_ADVANCED,
+    });
     const mediaRequest = await seedTvRequest(owner, [1, 2]);
     await seedMediaSeasons(67890, [
       { seasonNumber: 1, status: MediaStatus.AVAILABLE },
@@ -704,6 +708,71 @@ describe('PUT /request/:requestId (quota)', () => {
       saved.seasons.map((s) => s.seasonNumber).sort((a, b) => a - b),
       [1, 2, 4, 5]
     );
+  });
+});
+
+const tvOptions = {
+  serverId: 2,
+  profileId: 9,
+  rootFolder: '/chosen',
+  tags: [3],
+  languageProfileId: 4,
+};
+
+function storedOptions(request: MediaRequest) {
+  return {
+    serverId: request.serverId,
+    profileId: request.profileId,
+    rootFolder: request.rootFolder,
+    languageProfileId: request.languageProfileId,
+    tags: request.tags,
+  };
+}
+
+describe('PUT /request/:requestId (advanced options)', () => {
+  it('keeps the stored options when a regular requester edits their seasons', async () => {
+    const requestRepo = getRepository(MediaRequest);
+    const owner = await seedUser('friend@seerr.dev');
+    const mediaRequest = await seedTvRequest(owner, [1]);
+    const stored = {
+      serverId: 1,
+      profileId: 5,
+      rootFolder: '/stored',
+      languageProfileId: 2,
+      tags: [6],
+    };
+    await requestRepo.save(Object.assign(mediaRequest, stored));
+
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
+    const res = await agent.put(`/request/${mediaRequest.id}`).send({
+      mediaType: MediaType.TV,
+      seasons: [1, 2],
+      ...tvOptions,
+    });
+
+    assert.strictEqual(res.status, 200);
+
+    const saved = await requestRepo.findOneOrFail({
+      where: { id: mediaRequest.id },
+    });
+    assert.deepStrictEqual(
+      saved.seasons.map((s) => s.seasonNumber).sort((a, b) => a - b),
+      [1, 2]
+    );
+    assert.deepStrictEqual(storedOptions(saved), stored);
+  });
+
+  it('rejects a regular requester editing their movie request as a series', async () => {
+    const mediaRequest = await seedRequest();
+
+    const agent = await loginAs('friend@seerr.dev', 'test1234');
+    const res = await agent.put(`/request/${mediaRequest.id}`).send({
+      mediaType: MediaType.TV,
+      seasons: [1],
+      ...tvOptions,
+    });
+
+    assert.strictEqual(res.status, 403);
   });
 });
 

@@ -258,9 +258,37 @@ export class MediaRequest {
       type: 'or',
     });
 
-    let rootFolder = requestBody.rootFolder;
-    let profileId = requestBody.profileId;
-    let tags = requestBody.tags;
+    const isAdvanced = user.hasPermission(
+      [Permission.MANAGE_REQUESTS, Permission.REQUEST_ADVANCED],
+      { type: 'or' }
+    );
+
+    const requestsServer =
+      isAdvanced && requestBody.serverId != null && requestBody.serverId >= 0;
+
+    // An unknown serverId, or one for the other 4K type, falls back to the default server
+    const requestedServiceId =
+      requestsServer &&
+      (requestBody.mediaType === MediaType.MOVIE
+        ? settings.radarr
+        : settings.sonarr
+      ).some(
+        (server) =>
+          server.id === requestBody.serverId && server.is4k === requestBody.is4k
+      )
+        ? requestBody.serverId
+        : undefined;
+
+    // Only advanced requesters may pick the server, folder, profile and tags
+    const useRequestedOptions =
+      isAdvanced && (!requestsServer || requestedServiceId !== undefined);
+
+    let rootFolder = useRequestedOptions ? requestBody.rootFolder : undefined;
+    let profileId = useRequestedOptions ? requestBody.profileId : undefined;
+    let tags = useRequestedOptions ? requestBody.tags : undefined;
+    const languageProfileId = useRequestedOptions
+      ? requestBody.languageProfileId
+      : undefined;
 
     if (useOverrides) {
       const defaultRadarrId = requestBody.is4k
@@ -418,7 +446,7 @@ export class MediaRequest {
           ? user
           : undefined,
         is4k: requestBody.is4k,
-        serverId: requestBody.serverId,
+        serverId: requestedServiceId,
         profileId: profileId,
         rootFolder: rootFolder,
         tags: tags,
@@ -530,10 +558,10 @@ export class MediaRequest {
           ? user
           : undefined,
         is4k: requestBody.is4k,
-        serverId: requestBody.serverId,
+        serverId: requestedServiceId,
         profileId: profileId,
         rootFolder: rootFolder,
-        languageProfileId: requestBody.languageProfileId,
+        languageProfileId: languageProfileId,
         tags: tags,
         seasons: finalSeasons.map(
           (sn) =>
