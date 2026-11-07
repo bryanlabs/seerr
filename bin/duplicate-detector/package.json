@@ -13,5 +13,13 @@
   },
   "engines": {
     "node": ">=22.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@protobufjs/utf8@1.1.0": "1.1.1",
+      "protobufjs@7.5.4": "7.6.5",
+      "sharp@0.34.5": "0.35.5",
+      "tar@7.5.7": "7.5.21"
+    }
   }
 }
