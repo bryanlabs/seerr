@@ -936,7 +936,8 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
       const BookshelfAPI = (await import('@server/api/servarr/bookshelf'))
         .default;
       const { getHardcoverClient } = await import('@server/api/hardcover');
-      const { guessAuthorCandidates } = await import('@server/models/Book');
+      const { guessAuthorCandidates, pickHardcoverAuthor } =
+        await import('@server/models/Book');
       const client = new BookshelfAPI({
         apiKey: server.apiKey,
         url: BookshelfAPI.buildUrl(server, '/api/v1'),
@@ -952,18 +953,32 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         return;
       }
 
-      // Bookshelf's authorTitle is junk-formatted; try multiple
-      // candidate parses against /author/lookup until one matches.
+      // Bookshelf's author ids are Hardcover's, so take the author from
+      // Hardcover's book record. Only without one, search Bookshelf by name:
+      // authorTitle is junk-formatted, so try multiple candidate parses.
       const candidates = guessAuthorCandidates(match.authorTitle, match.title);
-      let resolvedForeignAuthorId: string | undefined;
-      let resolvedAuthorName: string | undefined;
-      for (const candidate of candidates) {
-        const result = await client.searchAuthor(candidate).catch(() => []);
-        const top = result[0];
-        if (top?.foreignAuthorId) {
-          resolvedForeignAuthorId = top.foreignAuthorId;
-          resolvedAuthorName = top.authorName;
-          break;
+      const hardcover = getHardcoverClient();
+      const detail = hardcover
+        ? await hardcover.getBookFullDetail(media.tmdbId).catch(() => null)
+        : null;
+      const canonicalTitle = detail?.title?.trim();
+      const hardcoverAuthor = pickHardcoverAuthor(
+        detail?.contributions,
+        candidates
+      );
+      let resolvedForeignAuthorId = hardcoverAuthor
+        ? String(hardcoverAuthor.id)
+        : undefined;
+      let resolvedAuthorName = hardcoverAuthor?.name;
+      if (!resolvedForeignAuthorId) {
+        for (const candidate of candidates) {
+          const result = await client.searchAuthor(candidate).catch(() => []);
+          const top = result[0];
+          if (top?.foreignAuthorId) {
+            resolvedForeignAuthorId = top.foreignAuthorId;
+            resolvedAuthorName = top.authorName;
+            break;
+          }
         }
       }
 
@@ -979,13 +994,6 @@ export class MediaRequestSubscriber implements EntitySubscriberInterface<MediaRe
         await requestRepository.save(entity);
         return;
       }
-
-      const hardcover = getHardcoverClient();
-      const canonicalTitle = hardcover
-        ? (
-            await hardcover.getBookFullDetail(media.tmdbId).catch(() => null)
-          )?.title?.trim()
-        : undefined;
 
       try {
         const book = await client.addBook({

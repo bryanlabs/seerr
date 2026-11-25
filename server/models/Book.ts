@@ -127,6 +127,32 @@ export const guessAuthorName = (
   title: string
 ): string => guessAuthorCandidates(authorTitle, title)[0] ?? '';
 
+/**
+ * The Hardcover author behind a book, for Bookshelf's foreignAuthorId (the
+ * two share ids). Prefers the contribution whose name matches the Bookshelf
+ * author candidates, then the first contribution, which Hardcover lists as
+ * the primary author. Using it skips Bookshelf's /author/lookup, a name
+ * search that loads every matching author's catalog from Hardcover.
+ */
+export const pickHardcoverAuthor = (
+  contributions:
+    | { author: { id: number; name: string } | null }[]
+    | null
+    | undefined,
+  candidates: string[]
+): { id: number; name: string } | undefined => {
+  const authors = (contributions ?? [])
+    .map((c) => c.author)
+    .filter((a): a is { id: number; name: string } => Boolean(a?.id && a.name));
+  const norm = (n: string) =>
+    n
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  const wanted = new Set(candidates.map(norm));
+  return authors.find((a) => wanted.has(norm(a.name))) ?? authors[0];
+};
+
 export const mapBookDetails = (
   book: BookshelfBook,
   mediaType: BookDetails['mediaType'],

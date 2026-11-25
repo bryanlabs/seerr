@@ -119,6 +119,12 @@ export interface AddBookOptions {
  * bookshelf-audiobooks and bookshelf-ebooks. This single class serves both; the
  * difference is purely the configured instance (URL + API key + default profiles).
  */
+// Bookshelf fetches an author it has never seen from Hardcover inside the
+// lookup or add call, at about 50 Hardcover queries a minute through
+// rreading-glasses, so a new author can take minutes. These calls get their
+// own timeout instead of the network setting's 10 seconds.
+const AUTHOR_FETCH_TIMEOUT_MS = 5 * 60 * 1000;
+
 class BookshelfAPI extends ServarrBase<{
   bookId: number;
   authorId: number;
@@ -155,6 +161,7 @@ class BookshelfAPI extends ServarrBase<{
     try {
       const response = await this.axios.get<BookshelfBook[]>('/book/lookup', {
         params: { term },
+        timeout: AUTHOR_FETCH_TIMEOUT_MS,
       });
       return response.data;
     } catch (e) {
@@ -171,7 +178,7 @@ class BookshelfAPI extends ServarrBase<{
     try {
       const response = await this.axios.get<BookshelfAuthor[]>(
         '/author/lookup',
-        { params: { term } }
+        { params: { term }, timeout: AUTHOR_FETCH_TIMEOUT_MS }
       );
       return response.data;
     } catch (e) {
@@ -309,7 +316,11 @@ class BookshelfAPI extends ServarrBase<{
       }
 
       try {
-        const response = await this.axios.post<BookshelfBook>('/book', payload);
+        const response = await this.axios.post<BookshelfBook>(
+          '/book',
+          payload,
+          { timeout: AUTHOR_FETCH_TIMEOUT_MS }
+        );
 
         if (response.data.id) {
           logger.info('Bookshelf accepted request', { label: 'Bookshelf' });
